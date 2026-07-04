@@ -36,6 +36,49 @@ def _ensure_sqlite_schema_updates():
 
     db.session.commit()
 
+def _ensure_default_seed():
+    """
+    Seed default roles and users if tables are empty.
+    """
+    from models import Role, User
+    from werkzeug.security import generate_password_hash
+    
+    try:
+        if Role.query.first() is None:
+            admin_role = Role(name="Admin")
+            staff_role = Role(name="Staff")
+            security_role = Role(name="Security")
+            db.session.add_all([admin_role, staff_role, security_role])
+            db.session.commit()
+            
+        if User.query.first() is None:
+            admin_role = Role.query.filter_by(name="Admin").first()
+            security_role = Role.query.filter_by(name="Security").first()
+            
+            peter_user = User(
+                username="peter",
+                first_name="Peter",
+                last_name="Gumunyu",
+                email="gumunyuvincent@gmail.com",
+                password_hash=generate_password_hash("Loice@1969"),
+                role_id=admin_role.id
+            )
+            db.session.add(peter_user)
+            
+            security_user = User(
+                username="security",
+                first_name="Gate",
+                last_name="Terminal",
+                email="security@taitmedical.co.zw",
+                password_hash=generate_password_hash("Gate@2024"),
+                role_id=security_role.id
+            )
+            db.session.add(security_user)
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error seeding default database: {e}")
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -48,6 +91,7 @@ def create_app(config_class=Config):
         import models
         db.create_all()
         _ensure_sqlite_schema_updates()
+        _ensure_default_seed()
 
     from routes import api as api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
