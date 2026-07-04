@@ -6,7 +6,7 @@ services:
   # Backend API Web Service
   - type: web
     name: attendance-manager-backend
-    env: python
+    runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn wsgi:app
@@ -25,10 +25,10 @@ services:
   # Frontend Static Site
   - type: web
     name: attendance-manager-frontend
-    env: static
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    publishPath: dist
+    staticPublishPath: dist
     routes:
       - type: rewrite
         source: /*
