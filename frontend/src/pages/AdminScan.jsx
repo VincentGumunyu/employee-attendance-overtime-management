@@ -74,10 +74,11 @@ const AdminScan = () => {
   const [historyLoading, setHistoryLoading] = useState(true);
 
   const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const lastValueRef = useRef('');
   const busyRef = useRef(false);
   const readerRef = useRef(null);
-  const controlsRef = useRef(null);
+  const scanOnRef = useRef(false);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -117,11 +118,22 @@ const AdminScan = () => {
   }, []);
 
   useEffect(() => {
-    return () => {
-      try { controlsRef.current?.stop(); } catch { /* ignore */ }
-      controlsRef.current = null;
-    };
+    return () => stopCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const stopStream = () => {
+    scanOnRef.current = false;
+    try { readerRef.current?.reset(); } catch { /* ignore */ }
+    readerRef.current = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      try { videoRef.current.srcObject = null; } catch { /* ignore */ }
+    }
+  };
 
   const startCamera = async () => {
     setError(null);
@@ -132,24 +144,45 @@ const AdminScan = () => {
     }
     setCameraStarting(true);
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      streamRef.current = stream;
       const reader = new BrowserMultiFormatReader();
       readerRef.current = reader;
-      const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: { ideal: 'environment' } }, audio: false },
-        videoRef.current,
-        (result) => {
-          if (result && !busyRef.current) {
-            const value = (result.getText() || '').trim().toUpperCase();
-            if (value && value !== lastValueRef.current) {
-              lastValueRef.current = value;
-              handleScan(value);
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        await video.play();
+      }
+      scanOnRef.current = true;
+      setCameraOn(true);
+      const tick = async () => {
+        if (!scanOnRef.current) return;
+        if (!busyRef.current) {
+          try {
+            const videoEl = videoRef.current;
+            if (videoEl && videoEl.videoWidth > 0 && !videoEl.paused) {
+              const result = reader.decode(videoEl);
+              if (result) {
+                const value = (result.getText() || '').trim().toUpperCase();
+                if (value && value !== lastValueRef.current) {
+                  lastValueRef.current = value;
+                  await handleScan(value);
+                }
+              }
             }
+          } catch {
+            // NotFound or frame not ready — keep scanning
           }
         }
-      );
-      controlsRef.current = controls;
-      setCameraOn(true);
+        setTimeout(tick, 200);
+      };
+      tick();
     } catch (err) {
+      scanOnRef.current = false;
+      stopStream();
       setCameraOn(false);
       const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError' || err.name === 'NotFoundError' || err.name === 'NotReadableError');
       setError(
@@ -163,9 +196,7 @@ const AdminScan = () => {
   };
 
   const stopCamera = () => {
-    try { controlsRef.current?.stop(); } catch { /* ignore */ }
-    controlsRef.current = null;
-    readerRef.current = null;
+    stopStream();
     setCameraOn(false);
   };
 
