@@ -296,22 +296,25 @@ class BarcodeIdentificationProvider(IdentificationProvider):
         return Employee.query.filter_by(barcode_value=v, barcode_enabled=True).first()
 
 
-class RFIDIdentificationProvider(IdentificationProvider):
-    identifier_type = "rfid"
-
-    def normalize(self, value: str) -> str:
-        return (value or "").strip()
-
-    def find_employee(self, value: str):
-        v = self.normalize(value)
-        if not v:
-            return None
-        return Employee.query.filter_by(rfid_uid=v).first()
+def _presence_summary(presence):
+    """
+    Slim presence info surfaced to the client on a successful scan response.
+    """
+    if not presence:
+        return None
+    labels = {'gps': 'GPS location', 'ip': 'Office network'}
+    method = presence.get('method')
+    return {
+        'verified': presence.get('verified'),
+        'method': method,
+        'method_label': labels.get(method, method),
+        'distance_m': presence.get('gps_distance_m'),
+    }
 
 
 class AttendanceService:
     @staticmethod
-    def _log_scan(*, employee, identifier_type, identifier_value, device, scan_result, attendance_action=None, message=None):
+    def _log_scan(*, employee, identifier_type, identifier_value, device, scan_result, attendance_action=None, message=None, presence=None):
         log = ScanLog(
             employee_id=employee.id if employee else None,
             identifier_type=identifier_type,
@@ -320,6 +323,10 @@ class AttendanceService:
             scan_result=scan_result,
             attendance_action=attendance_action,
             message=message,
+            verified=presence.get('verified') if presence else None,
+            verification_method=presence.get('method') if presence else None,
+            scan_ip=presence.get('client_ip') if presence else None,
+            distance_m=presence.get('gps_distance_m') if presence else None,
         )
         db.session.add(log)
         return log
@@ -340,50 +347,31 @@ class AttendanceService:
         return recent is not None
 
     @staticmethod
-    def process_scan(*, provider: IdentificationProvider, identifier_value: str, device: str = None):
+    def reject_if_duplicate_employee_scan(employee_id: int, *, window_seconds: int = 30) -> bool:
         """
-        Returns (status_code, payload_dict) for scan result.
+        Rejects a second successful attendance scan for the same employee
+        within the window. Used by the employee self-scan flow where the
+        scanned identifier (gate barcode) is shared across employees.
         """
-        identifier_value_norm = provider.normalize(identifier_value)
-        identifier_type = provider.identifier_type
-
-        if not identifier_value_norm:
-            AttendanceService._log_scan(
-                employee=None,
-                identifier_type=identifier_type,
-                identifier_value="",
-                device=device,
-                scan_result="rejected",
-                message="Empty identifier",
+        since = datetime.utcnow() - timedelta(seconds=window_seconds)
+        recent = (
+            ScanLog.query.filter(
+                ScanLog.employee_id == employee_id,
+                ScanLog.scanned_at >= since,
+                ScanLog.scan_result == "success",
+                ScanLog.attendance_action.isnot(None),
             )
-            db.session.commit()
-            return 400, {"error": "Identifier required"}
+            .order_by(ScanLog.scanned_at.desc())
+            .first()
+        )
+        return recent is not None
 
-        if AttendanceService.reject_if_duplicate_scan(identifier_type, identifier_value_norm, window_seconds=30):
-            AttendanceService._log_scan(
-                employee=None,
-                identifier_type=identifier_type,
-                identifier_value=identifier_value_norm,
-                device=device,
-                scan_result="rejected",
-                message="Duplicate scan ignored",
-            )
-            db.session.commit()
-            return 400, {"error": "Duplicate scan ignored"}
-
-        employee = provider.find_employee(identifier_value_norm)
-        if not employee:
-            AttendanceService._log_scan(
-                employee=None,
-                identifier_type=identifier_type,
-                identifier_value=identifier_value_norm,
-                device=device,
-                scan_result="not_registered",
-                message="Not registered",
-            )
-            db.session.commit()
-            return 404, {"error": "Barcode Not Registered" if identifier_type == "barcode" else "Card Not Registered"}
-
+    @staticmethod
+    def _apply_clock(*, employee, identifier_type, identifier_value, device, presence=None):
+        """
+        Core check-in / check-out logic once the employee (and any gate/identifier
+        validation) has been resolved. Shared by terminal scans and employee self-scans.
+        """
         from datetime import date as _date
         today = _date.today()
         now = datetime.now()
@@ -413,11 +401,12 @@ class AttendanceService:
             AttendanceService._log_scan(
                 employee=employee,
                 identifier_type=identifier_type,
-                identifier_value=identifier_value_norm,
+                identifier_value=identifier_value,
                 device=device,
                 scan_result="success",
                 attendance_action="check_in",
                 message="Check-in successful",
+                presence=presence,
             )
             db.session.commit()
             emp_name = f"{employee.first_name} {employee.last_name}"
@@ -429,6 +418,7 @@ class AttendanceService:
                 "action": "check_in",
                 "time": now.strftime("%I:%M %p"),
                 "status": status,
+                "verification": _presence_summary(presence),
                 "greeting": greeting,
             }
 
@@ -438,11 +428,12 @@ class AttendanceService:
                 AttendanceService._log_scan(
                     employee=employee,
                     identifier_type=identifier_type,
-                    identifier_value=identifier_value_norm,
+                    identifier_value=identifier_value,
                     device=device,
                     scan_result="rejected",
                     attendance_action="check_out",
                     message="Duplicate check-in scan within 15-minute grace period",
+                    presence=presence,
                 )
                 db.session.commit()
                 return 400, {"error": "Duplicate scan ignored"}
@@ -468,11 +459,12 @@ class AttendanceService:
             AttendanceService._log_scan(
                 employee=employee,
                 identifier_type=identifier_type,
-                identifier_value=identifier_value_norm,
+                identifier_value=identifier_value,
                 device=device,
                 scan_result="success",
                 attendance_action="check_out",
                 message="Check-out successful",
+                presence=presence,
             )
             db.session.commit()
             emp_name = f"{employee.first_name} {employee.last_name}"
@@ -487,19 +479,77 @@ class AttendanceService:
                 "worked_minutes": worked_mins,
                 "daily_overtime_minutes": daily_ot_mins,
                 "daily_overtime_formatted": AttendanceCalculationService.format_to_hours_mins(daily_ot_mins),
+                "verification": _presence_summary(presence),
                 "greeting": greeting,
             }
 
         AttendanceService._log_scan(
             employee=employee,
             identifier_type=identifier_type,
-            identifier_value=identifier_value_norm,
+            identifier_value=identifier_value,
             device=device,
             scan_result="rejected",
             message="Already checked out today",
+            presence=presence,
         )
         db.session.commit()
         return 400, {"error": "Already checked out today"}
+
+    @staticmethod
+    def process_scan(*, provider: IdentificationProvider, identifier_value: str, device: str = None, presence=None):
+        """
+        Returns (status_code, payload_dict) for scan result.
+        """
+        identifier_value_norm = provider.normalize(identifier_value)
+        identifier_type = provider.identifier_type
+
+        if not identifier_value_norm:
+            AttendanceService._log_scan(
+                employee=None,
+                identifier_type=identifier_type,
+                identifier_value="",
+                device=device,
+                scan_result="rejected",
+                message="Empty identifier",
+                presence=presence,
+            )
+            db.session.commit()
+            return 400, {"error": "Identifier required"}
+
+        if AttendanceService.reject_if_duplicate_scan(identifier_type, identifier_value_norm, window_seconds=30):
+            AttendanceService._log_scan(
+                employee=None,
+                identifier_type=identifier_type,
+                identifier_value=identifier_value_norm,
+                device=device,
+                scan_result="rejected",
+                message="Duplicate scan ignored",
+                presence=presence,
+            )
+            db.session.commit()
+            return 400, {"error": "Duplicate scan ignored"}
+
+        employee = provider.find_employee(identifier_value_norm)
+        if not employee:
+            AttendanceService._log_scan(
+                employee=None,
+                identifier_type=identifier_type,
+                identifier_value=identifier_value_norm,
+                device=device,
+                scan_result="not_registered",
+                message="Not registered",
+                presence=presence,
+            )
+            db.session.commit()
+            return 404, {"error": "Barcode Not Registered"}
+
+        return AttendanceService._apply_clock(
+            employee=employee,
+            identifier_type=identifier_type,
+            identifier_value=identifier_value_norm,
+            device=device,
+            presence=presence,
+        )
 
 
 class IdCardService:
@@ -515,7 +565,7 @@ class IdCardService:
         buff = BytesIO()
         c = canvas.Canvas(buff, pagesize=(width, height))
 
-        hospital_name = current_app.config.get("HOSPITAL_NAME", "TAIT HOSPITAL")
+        hospital_name = current_app.config.get("HOSPITAL_NAME", "MEDISHIFT")
 
         # Header
         c.setFont("Helvetica-Bold", 10)

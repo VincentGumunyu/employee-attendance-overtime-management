@@ -1,11 +1,37 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, IdCard, Plus, RefreshCw, ScanLine, ShieldAlert, Trash2 } from 'lucide-react';
+import {
+  Download, IdCard, Plus, RefreshCw, ShieldAlert, Trash2,
+  UserRound, Mail, Briefcase, Clock, Phone, Hash, Building2, ChevronDown, ChevronUp,
+} from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { api } from '../lib/api';
 
 const formatEmp = (e) => `${e.first_name || ''} ${e.last_name || ''}`.trim();
+
+const DetailRow = ({ icon, label, value, mono }) => (
+  <div className="col-6">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: '#F4F8F5', borderRadius: 12, minWidth: 0 }}>
+      <span style={{ color: '#2DB54A', flexShrink: 0 }}>{icon}</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B8070' }}>{label}</div>
+        <div
+          title={value}
+          style={{ fontSize: 13, fontWeight: 700, color: '#1E3027', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: mono ? 'monospace' : 'inherit' }}
+        >
+          {value}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const statusBadgeClass = (s) => {
+  if (s === 'Active') return 'mc-status-active';
+  if (s === 'On Leave') return 'mc-status-leave';
+  return 'mc-status-inactive';
+};
 
 const todayISO = () => {
   const d = new Date();
@@ -27,15 +53,17 @@ const Employees = () => {
     employee_number: '',
     first_name: '',
     last_name: '',
+    email: '',
+    password: '',
     department_id: '',
     position: '',
     employment_status: 'Active',
     weekly_working_hours: 45,
     contact: '',
-    rfid_uid: ''
   });
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [showTools, setShowTools] = useState(false);
 
   const cardRef = useRef(null);
 
@@ -73,29 +101,35 @@ const Employees = () => {
   const create = async (e) => {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.department_id) return;
+    if (!form.email.trim() || form.password.length < 6) {
+      setError('Email and a password of at least 6 characters are required to create the employee login.');
+      return;
+    }
     try {
       setSaving(true);
       await api.post('/employees', {
         employee_number: form.employee_number.trim() || undefined,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
         department_id: Number(form.department_id),
         position: form.position.trim() || undefined,
         employment_status: form.employment_status,
         weekly_working_hours: Number(form.weekly_working_hours || defaultWeeklyHours || 45),
         emergency_contact: form.contact.trim() || undefined,
-        rfid_uid: form.rfid_uid.trim() || undefined
       });
       setForm({
         employee_number: '',
         first_name: '',
         last_name: '',
+        email: '',
+        password: '',
         department_id: '',
         position: '',
         employment_status: 'Active',
         weekly_working_hours: defaultWeeklyHours || 45,
         contact: '',
-        rfid_uid: ''
       });
       await load();
     } catch (e2) {
@@ -201,20 +235,20 @@ const Employees = () => {
         </button>
       </div>
 
-      <div style={{ padding: '24px 28px', display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '16px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="mc-page mc-grid">
+        <div className="mc-page-stack">
           {error && (
-            <div className="alert alert-danger d-flex align-items-center gap-2 mb-0 border-0" role="alert" style={{ borderRadius: '10px', fontSize: '13px' }}>
+            <div className="alert alert-danger d-flex align-items-center gap-2 mb-0 border-0" role="alert" style={{ borderRadius: '14px', fontSize: '13px' }}>
               <ShieldAlert size={18} />
               {error}
             </div>
           )}
 
-          <div className="card" style={{ padding: '18px 20px' }}>
+          <div className="card" style={{ padding: '20px 22px' }}>
             <div className="d-flex align-items-center justify-content-between mb-3">
               <div style={{ fontWeight: 800, color: '#1E3027' }}>Register New Employee</div>
               <div style={{ fontSize: 12, color: '#6B8070' }}>
-                Barcode + employee number auto-generated if blank
+                Employee barcode auto-generated · login account auto-created
               </div>
             </div>
             <form onSubmit={create} className="row g-2">
@@ -229,6 +263,24 @@ const Employees = () => {
               <div className="col-md-3">
                 <input className="form-control" placeholder="Last name" value={form.last_name}
                   onChange={(e) => setForm((s) => ({ ...s, last_name: e.target.value }))} />
+              </div>
+              <div className="col-md-3">
+                <input
+                  type="email"
+                  className="form-control"
+                  placeholder="Email (login)"
+                  value={form.email}
+                  onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
+                />
+              </div>
+              <div className="col-md-3">
+                <input
+                  type="password"
+                  className="form-control"
+                  placeholder="Password (min 6 chars)"
+                  value={form.password}
+                  onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
+                />
               </div>
               <div className="col-md-3">
                 <select className="form-select" value={form.department_id}
@@ -262,14 +314,13 @@ const Employees = () => {
                 />
               </div>
               <div className="col-md-3">
-                <input className="form-control" placeholder="Contact (optional)" value={form.contact}
+                <input className="form-control" placeholder="Emergency contact (optional)" value={form.contact}
                   onChange={(e) => setForm((s) => ({ ...s, contact: e.target.value }))} />
               </div>
-              <div className="col-md-6">
-                <input className="form-control" placeholder="RFID UID (optional)" value={form.rfid_uid}
-                  onChange={(e) => setForm((s) => ({ ...s, rfid_uid: e.target.value }))} />
-              </div>
 
+              <div className="col-md-6 d-flex align-items-center" style={{ fontSize: 12, color: '#6B8070' }}>
+                The employee signs in with their email + password and scans the security gate barcode with their camera.
+              </div>
               <div className="col-md-6 d-flex justify-content-end">
                 <button className="btn btn-success d-flex align-items-center gap-2" disabled={saving}>
                   <Plus size={16} />
@@ -284,11 +335,11 @@ const Employees = () => {
               <span>Employees</span>
               <span style={{ fontSize: 12, color: '#6B8070', fontWeight: 400 }}>{employees.length} total</span>
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="table mb-0">
+            <div className="mc-table-scroll">
+              <table className="table mb-0 mc-table-wide">
                 <thead>
                   <tr>
-                    <th style={{ paddingLeft: '24px !important' }}>Employee</th>
+                    <th className="mc-th-first">Employee</th>
                     <th>Employee No</th>
                     <th>Department</th>
                     <th>Position</th>
@@ -325,95 +376,131 @@ const Employees = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="card" style={{ padding: '18px 20px' }}>
-            <div className="d-flex align-items-center gap-2 mb-2" style={{ fontWeight: 800, color: '#1E3027' }}>
-              <IdCard size={18} color="#2DB54A" />
+        <div className="mc-page-stack">
+          <div className="card" style={{ padding: '20px 22px' }}>
+            <div className="d-flex align-items-center gap-2 mb-3" style={{ fontWeight: 800, color: '#1E3027' }}>
+              <UserRound size={18} color="#2DB54A" />
               Employee Profile
             </div>
             {!selected ? (
               <div style={{ color: '#6B8070', fontSize: 13 }}>
-                Select an employee from the table to view their barcode preview and print an ID card.
+                Select an employee from the table to view their details.
               </div>
             ) : (
               <>
-                <div className="d-flex justify-content-between align-items-start mb-2">
-                  <div>
-                    <div style={{ fontWeight: 900, fontSize: 16, color: '#1E3027' }}>{formatEmp(selected)}</div>
-                    <div style={{ fontSize: 12, color: '#6B8070' }}>
-                      {deptNameById.get(String(selected.department_id)) || selected.department || '—'} · {selected.position || '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6B8070' }}>
-                      Employee No: <span style={{ fontFamily: 'monospace', color: '#1E3027' }}>{selected.employee_number}</span>
-                    </div>
-                  </div>
-                  <button className="btn btn-light btn-sm d-flex align-items-center gap-1" onClick={() => setSelected(null)}>
-                    Close
-                  </button>
-                </div>
-
-                <div style={{ border: '1px solid #E5EDE7', borderRadius: 12, padding: 12, background: '#fff' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#6B8070', marginBottom: 8 }}>Barcode Preview</div>
-                  {selected.barcode_value ? (
-                    <>
-                      <svg id="emp-barcode-svg" style={{ width: '100%' }} />
-                      <div className="d-flex gap-2 mt-2 flex-wrap">
-                        <button className="btn btn-success btn-sm d-flex align-items-center gap-1" onClick={() => regenerateBarcode(selected)}>
-                          <RefreshCw size={14} /> Regenerate
-                        </button>
-                        <button className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" onClick={() => toggleBarcode(selected)}>
-                          <ShieldAlert size={14} /> {selected.barcode_enabled ? 'Disable' : 'Enable'}
-                        </button>
-                        <button className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1" onClick={() => downloadBarcodePNG(selected)}>
-                          <Download size={14} /> Download PNG
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ color: '#6B8070', fontSize: 13 }}>No barcode assigned.</div>
-                  )}
-                </div>
-
-                <div className="card mt-2" style={{ padding: 0, overflow: 'hidden' }}>
-                  <div style={{ padding: '12px 14px', borderBottom: '1px solid #F0F4F1', fontWeight: 800, color: '#1E3027' }}>
-                    Printable ID Card (PDF)
-                  </div>
-
-                  <div style={{ padding: 14 }}>
-                    <div ref={cardRef} style={{
-                      width: 340,
-                      border: '1px solid #E5EDE7',
-                      borderRadius: 12,
-                      padding: 14,
-                      background: '#fff'
+                <div className="d-flex align-items-start justify-content-between gap-2">
+                  <div className="d-flex align-items-center gap-3" style={{ minWidth: 0 }}>
+                    <div style={{
+                      width: 52, height: 52, borderRadius: 16, flexShrink: 0,
+                      background: 'linear-gradient(135deg,#2DB54A,#52D76B)', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 800, fontSize: 17, boxShadow: '0 8px 18px -8px rgba(45,181,74,0.6)'
                     }}>
-                      <div style={{ textAlign: 'center', fontWeight: 900, letterSpacing: 0.5 }}>TAIT HOSPITAL</div>
-                      <div style={{ textAlign: 'center', fontSize: 11, color: '#6B8070', fontWeight: 700, marginBottom: 10 }}>
-                        EMPLOYEE IDENTIFICATION CARD
-                      </div>
-
-                      <div style={{ fontSize: 12, lineHeight: 1.4 }}>
-                        <div><strong>Name:</strong> {formatEmp(selected)}</div>
-                        <div><strong>Employee Number:</strong> {selected.employee_number}</div>
-                        <div><strong>Department:</strong> {deptNameById.get(String(selected.department_id)) || selected.department || '—'}</div>
-                        <div><strong>Position:</strong> {selected.position || '—'}</div>
-                        <div><strong>Status:</strong> {selected.employment_status || '—'}</div>
-                        {selected.emergency_contact ? <div><strong>Contact:</strong> {selected.emergency_contact}</div> : null}
-                        <div><strong>Issue Date:</strong> {todayISO()}</div>
-                      </div>
-
-                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #E5EDE7' }}>
-                        <svg id="emp-barcode-svg-card" style={{ width: '100%' }} />
-                      </div>
+                      {formatEmp(selected).split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
                     </div>
-
-                    <div className="d-flex gap-2 mt-2 flex-wrap">
-                      <button className="btn btn-primary btn-sm d-flex align-items-center gap-1" onClick={printIdCardPdf}>
-                        <IdCard size={14} /> Download PDF
-                      </button>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 900, fontSize: 16, color: '#1E3027', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {formatEmp(selected)}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6B8070' }}>
+                        {deptNameById.get(String(selected.department_id)) || selected.department || '—'}
+                        {selected.position ? ` · ${selected.position}` : ''}
+                      </div>
                     </div>
                   </div>
+                  <div className="d-flex flex-column align-items-end gap-1" style={{ flexShrink: 0 }}>
+                    <span className={`badge ${statusBadgeClass(selected.employment_status)}`}>{selected.employment_status || '—'}</span>
+                    <button className="btn btn-light btn-sm" onClick={() => setSelected(null)}>Close</button>
+                  </div>
                 </div>
+
+                <div style={{ borderTop: '1px solid #EEF3EF', margin: '16px 0 12px' }} />
+
+                <div className="row g-2">
+                  <DetailRow icon={<Hash size={14} />} label="Employee No" value={selected.employee_number || '—'} mono />
+                  <DetailRow icon={<Mail size={14} />} label="Email (login)" value={selected.email || '—'} />
+                  <DetailRow icon={<Building2 size={14} />} label="Department" value={deptNameById.get(String(selected.department_id)) || selected.department || '—'} />
+                  <DetailRow icon={<Briefcase size={14} />} label="Position" value={selected.position || '—'} />
+                  <DetailRow icon={<Clock size={14} />} label="Weekly Hours" value={selected.weekly_working_hours ? `${selected.weekly_working_hours}h` : '—'} />
+                  <DetailRow icon={<Phone size={14} />} label="Emergency Contact" value={selected.emergency_contact || '—'} />
+                </div>
+
+                <button
+                  className="btn w-100 d-flex align-items-center justify-content-between mt-3"
+                  onClick={() => setShowTools((s) => !s)}
+                  style={{ background: 'rgba(45,181,74,0.08)', color: '#15603A', fontWeight: 700, fontSize: 13, borderRadius: 12, padding: '10px 14px' }}
+                  aria-expanded={showTools}
+                >
+                  <span className="d-flex align-items-center gap-2"><IdCard size={15} /> Barcode &amp; ID tools</span>
+                  {showTools ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+
+                {showTools && (
+                  <>
+                    <div style={{ border: '1px solid #E5EDE7', borderRadius: 12, padding: 12, background: '#fff', marginTop: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#6B8070', marginBottom: 8 }}>Barcode Preview</div>
+                      {selected.barcode_value ? (
+                        <>
+                          <svg id="emp-barcode-svg" style={{ width: '100%' }} />
+                          <div className="d-flex gap-2 mt-2 flex-wrap">
+                            <button className="btn btn-success btn-sm d-flex align-items-center gap-1" onClick={() => regenerateBarcode(selected)}>
+                              <RefreshCw size={14} /> Regenerate
+                            </button>
+                            <button className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" onClick={() => toggleBarcode(selected)}>
+                              <ShieldAlert size={14} /> {selected.barcode_enabled ? 'Disable' : 'Enable'}
+                            </button>
+                            <button className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1" onClick={() => downloadBarcodePNG(selected)}>
+                              <Download size={14} /> Download PNG
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ color: '#6B8070', fontSize: 13 }}>No barcode assigned.</div>
+                      )}
+                    </div>
+
+                    <div className="card mt-2" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div style={{ padding: '12px 14px', borderBottom: '1px solid #F0F4F1', fontWeight: 800, color: '#1E3027' }}>
+                        Printable ID Card (PDF)
+                      </div>
+
+                      <div style={{ padding: 14 }}>
+                        <div ref={cardRef} style={{
+                          width: 340,
+                          border: '1px solid #E5EDE7',
+                          borderRadius: 12,
+                          padding: 14,
+                          background: '#fff'
+                        }}>
+                          <div style={{ textAlign: 'center', fontWeight: 900, letterSpacing: 0.5 }}>MEDISHIFT</div>
+                          <div style={{ textAlign: 'center', fontSize: 11, color: '#6B8070', fontWeight: 700, marginBottom: 10 }}>
+                            EMPLOYEE IDENTIFICATION CARD
+                          </div>
+
+                          <div style={{ fontSize: 12, lineHeight: 1.4 }}>
+                            <div><strong>Name:</strong> {formatEmp(selected)}</div>
+                            <div><strong>Employee Number:</strong> {selected.employee_number}</div>
+                            <div><strong>Department:</strong> {deptNameById.get(String(selected.department_id)) || selected.department || '—'}</div>
+                            <div><strong>Position:</strong> {selected.position || '—'}</div>
+                            <div><strong>Status:</strong> {selected.employment_status || '—'}</div>
+                            {selected.emergency_contact ? <div><strong>Contact:</strong> {selected.emergency_contact}</div> : null}
+                            <div><strong>Issue Date:</strong> {todayISO()}</div>
+                          </div>
+
+                          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #E5EDE7' }}>
+                            <svg id="emp-barcode-svg-card" style={{ width: '100%' }} />
+                          </div>
+                        </div>
+
+                        <div className="d-flex gap-2 mt-2 flex-wrap">
+                          <button className="btn btn-primary btn-sm d-flex align-items-center gap-1" onClick={printIdCardPdf}>
+                            <IdCard size={14} /> Download PDF
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>

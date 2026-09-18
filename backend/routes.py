@@ -2,21 +2,50 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime, date, timedelta
 from flask import send_file
 from io import BytesIO
-from werkzeug.security import check_password_hash
+import secrets
+import string as _string
+from werkzeug.security import check_password_hash, generate_password_hash
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity
 
-from models import Employee, Department, Attendance, ScanLog, User, db
+from models import Employee, Department, Attendance, ScanLog, User, Role, db
 from services import (
     AttendanceCalculationService,
     AttendanceService,
     BarcodeIdentificationProvider,
-    RFIDIdentificationProvider,
     BarcodeService,
     CredentialService,
     IdCardService,
 )
+from presence import (
+    get_client_ip,
+    load_presence_config,
+    save_presence_config,
+    verify_presence,
+    presence_block_message,
+)
 
 api = Blueprint('api', __name__)
+
+def _current_user():
+    """
+    Returns the User for the current JWT identity (or None).
+    """
+    try:
+        user_id = int(get_jwt_identity())
+    except (TypeError, ValueError):
+        return None
+    return User.query.get(user_id)
+
+def _parse_optional_float(value):
+    if value is None or value == '':
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def _is_admin(user):
+    return bool(user and user.role and user.role.name == 'Admin')
 
 @api.route('/login', methods=['POST'])
 def login():
@@ -33,7 +62,12 @@ def login():
     
     if not user or not check_password_hash(user.password_hash, password):
         return jsonify({'error': 'Invalid username/email or password'}), 401
-        
+
+    # Every security terminal needs a gate barcode for employees to scan.
+    if user.role and user.role.name == 'Security' and not user.gate_barcode:
+        user.gate_barcode = f"GATE-{user.username.upper()}"
+        db.session.commit()
+
     access_token = create_access_token(identity=str(user.id))
     return jsonify({
         'access_token': access_token,
@@ -43,7 +77,8 @@ def login():
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,
-            'role': user.role.name if user.role else 'Staff'
+            'role': user.role.name if user.role else 'Staff',
+            'employee_id': user.employee_id,
         }
     }), 200
 
@@ -114,30 +149,73 @@ def handle_department(department_id):
     db.session.commit()
     return jsonify({'message': 'Department updated'}), 200
 
+def _unique_username_from_email(email):
+    """
+    Derive a unique username from an email address (local-part), appended with
+    a numeric suffix if it collides with an existing username.
+    """
+    base = (email or '').strip().split('@')[0].lower().replace('.', '.').strip()
+    base = base or 'employee'
+    candidate = base
+    suffix = 1
+    while User.query.filter_by(username=candidate).first():
+        suffix += 1
+        candidate = f"{base}{suffix}"
+    return candidate
+
 @api.route('/employees', methods=['GET', 'POST'])
 @jwt_required()
 def handle_employees():
     if request.method == 'POST':
-        data = request.json
+        data = request.json or {}
+        email = (data.get('email') or '').strip().lower()
+        password = data.get('password') or ''
+
+        if not email:
+            return jsonify({'error': 'Employee email is required for login'}), 400
+        if not password or len(password) < 6:
+            return jsonify({'error': 'A password of at least 6 characters is required'}), 400
+        if User.query.filter_by(email=email).first():
+            return jsonify({'error': 'An account with this email already exists'}), 409
+
         employee_number = data.get('employee_number')
         new_emp = Employee(
             employee_number=employee_number or CredentialService.generate_next_employee_number(),
             first_name=data['first_name'],
             last_name=data['last_name'],
+            email=email,
             department_id=data['department_id'],
-            rfid_uid=data.get('rfid_uid'),
             position=data.get('position'),
             employment_status=data.get('employment_status') or 'Active',
             weekly_working_hours=data.get('weekly_working_hours') or 40,
             emergency_contact=data.get('emergency_contact'),
         )
-        # Auto-generate barcode credential
         BarcodeService.assign_barcode(new_emp, force=False)
         db.session.add(new_emp)
+        db.session.flush()
+
+        staff_role = Role.query.filter_by(name='Staff').first()
+        if not staff_role:
+            db.session.rollback()
+            return jsonify({'error': 'Staff role is not configured'}), 500
+
+        username = _unique_username_from_email(email)
+        login = User(
+            username=username,
+            email=email,
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            password_hash=generate_password_hash(password),
+            role_id=staff_role.id,
+            employee_id=new_emp.id,
+        )
+        db.session.add(login)
         db.session.commit()
         return jsonify({
-            'message': 'Employee created',
+            'message': 'Employee and login account created',
             'employee_number': new_emp.employee_number,
+            'username': username,
+            'email': email,
             'barcode_value': new_emp.barcode_value
         }), 201
         
@@ -146,6 +224,7 @@ def handle_employees():
         'id': e.id, 
         'first_name': e.first_name, 
         'last_name': e.last_name, 
+        'email': e.email,
         'employee_number': e.employee_number,
         'department': e.department.name if e.department else 'N/A',
         'department_id': e.department_id,
@@ -168,26 +247,39 @@ def handle_employee(employee_id):
             'employee_number': employee.employee_number,
             'first_name': employee.first_name,
             'last_name': employee.last_name,
+            'email': employee.email,
             'department_id': employee.department_id,
             'department': employee.department.name if employee.department else None,
             'position': employee.position,
             'employment_status': employee.employment_status,
             'weekly_working_hours': employee.weekly_working_hours,
-            'rfid_uid': employee.rfid_uid,
             'barcode_value': employee.barcode_value,
             'barcode_enabled': employee.barcode_enabled,
             'emergency_contact': employee.emergency_contact,
         })
 
     if request.method == 'DELETE':
+        # Delete any linked login account so the employee can no longer sign in.
+        linked = User.query.filter_by(employee_id=employee.id).first()
+        if linked:
+            db.session.delete(linked)
         db.session.delete(employee)
         db.session.commit()
         return jsonify({'message': 'Employee deleted'}), 200
 
     data = request.json or {}
-    for k in ['first_name', 'last_name', 'position', 'employment_status', 'rfid_uid', 'emergency_contact']:
+    for k in ['first_name', 'last_name', 'position', 'employment_status', 'emergency_contact']:
         if k in data:
             setattr(employee, k, data.get(k))
+    if 'email' in data and data.get('email'):
+        email = data.get('email').strip().lower()
+        conflict = User.query.filter(User.email == email, User.employee_id != employee.id).first()
+        if conflict:
+            return jsonify({'error': 'An account with this email already exists'}), 409
+        employee.email = email
+        linked = User.query.filter_by(employee_id=employee.id).first()
+        if linked:
+            linked.email = email
     if 'department_id' in data:
         employee.department_id = data.get('department_id')
     if 'weekly_working_hours' in data:
@@ -266,33 +358,435 @@ def report_overtime():
 
 @api.route('/attendance/scan', methods=['POST'])
 def scan_rfid():
-    data = request.json
+    data = request.json or {}
     identifier_type = (data.get('identifier_type') or '').strip().lower()
     identifier_value = data.get('identifier_value')
     device = data.get('device')
 
     if not identifier_type:
-        # Backward-compat: old clients send rfid_uid
-        if data.get('rfid_uid'):
-            identifier_type = 'rfid'
-            identifier_value = data.get('rfid_uid')
-        elif data.get('barcode'):
+        # Backward-compat: old clients send barcode directly
+        if data.get('barcode'):
             identifier_type = 'barcode'
             identifier_value = data.get('barcode')
 
-    if identifier_type == 'barcode':
-        provider = BarcodeIdentificationProvider()
-    elif identifier_type == 'rfid':
-        provider = RFIDIdentificationProvider()
-    else:
-        return jsonify({'error': 'identifier_type must be barcode or rfid'}), 400
+    if identifier_type != 'barcode':
+        return jsonify({'error': 'Only barcode scanning is supported'}), 400
+
+    # Gate terminals are physically at the company. Verify presence using the
+    # client IP (and optional GPS if the terminal reports it) before clocking.
+    presence = verify_presence(
+        latitude=_parse_optional_float(data.get('latitude')),
+        longitude=_parse_optional_float(data.get('longitude')),
+        client_ip=get_client_ip(),
+    )
+    if presence.get('verified') is False:
+        AttendanceService._log_scan(
+            employee=None,
+            identifier_type=identifier_type,
+            identifier_value=(identifier_value or '').strip().upper(),
+            device=device,
+            scan_result='rejected',
+            message='Presence check failed: ' + presence_block_message(presence),
+            presence=presence,
+        )
+        db.session.commit()
+        return jsonify({'error': presence_block_message(presence), 'blocked': True, 'presence': presence}), 403
+
+    provider = BarcodeIdentificationProvider()
 
     status_code, payload = AttendanceService.process_scan(
         provider=provider,
         identifier_value=identifier_value,
-        device=device
+        device=device,
+        presence=presence,
     )
     return jsonify(payload), status_code
+
+
+@api.route('/attendance/self-scan', methods=['POST'])
+@jwt_required()
+def self_scan():
+    """
+    Employee self-service scan. The logged-in employee scans the gate barcode
+    displayed on the Security terminal with their phone camera. The barcode
+    authenticates the gate; the employee identity comes from the JWT.
+    """
+    data = request.json or {}
+    barcode = (data.get('barcode') or '').strip().upper()
+    device = data.get('device') or 'MOBILE-CAMERA'
+    latitude = _parse_optional_float(data.get('latitude'))
+    longitude = _parse_optional_float(data.get('longitude'))
+
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+    employee = user.employee if user.employee_id else None
+    if not employee:
+        return jsonify({'error': 'No employee profile linked to this account'}), 400
+
+    # Presence check: the employee must be physically at the company. Accepts
+    # GPS geofence (coords from their phone) OR an office-network IP; blocks
+    # the scan when neither matches.
+    presence = verify_presence(
+        latitude=latitude,
+        longitude=longitude,
+        client_ip=get_client_ip(),
+    )
+    if presence.get('verified') is False:
+        AttendanceService._log_scan(
+            employee=employee,
+            identifier_type='self_scan',
+            identifier_value=barcode,
+            device=device,
+            scan_result='rejected',
+            message='Presence check failed: ' + presence_block_message(presence),
+            presence=presence,
+        )
+        db.session.commit()
+        return jsonify({'error': presence_block_message(presence), 'blocked': True, 'presence': presence}), 403
+
+    gate = User.query.filter(User.gate_barcode == barcode).filter(
+        User.role.has(name='Security')
+    ).first()
+    if not gate:
+        AttendanceService._log_scan(
+            employee=employee,
+            identifier_type='self_scan',
+            identifier_value=barcode,
+            device=device,
+            scan_result='rejected',
+            message='Invalid gate barcode',
+            presence=presence,
+        )
+        db.session.commit()
+        return jsonify({'error': 'Invalid gate barcode. Scan the barcode shown on the security terminal.'}), 404
+
+    if AttendanceService.reject_if_duplicate_employee_scan(employee.id, window_seconds=30):
+        AttendanceService._log_scan(
+            employee=employee,
+            identifier_type='self_scan',
+            identifier_value=barcode,
+            device=device,
+            scan_result='rejected',
+            message='Duplicate scan ignored',
+            presence=presence,
+        )
+        db.session.commit()
+        return jsonify({'error': 'Duplicate scan ignored'}), 400
+
+    status_code, payload = AttendanceService._apply_clock(
+        employee=employee,
+        identifier_type='self_scan',
+        identifier_value=barcode,
+        device=device,
+        presence=presence,
+    )
+    return jsonify(payload), status_code
+
+
+@api.route('/settings/presence', methods=['GET'])
+@jwt_required()
+def get_presence_settings():
+    user = _current_user()
+    if not _is_admin(user):
+        return jsonify({'error': 'Forbidden'}), 403
+    cfg = load_presence_config()
+    return jsonify({
+        'enabled': cfg['enabled'],
+        'company_latitude': cfg['latitude'],
+        'company_longitude': cfg['longitude'],
+        'allowed_radius_m': cfg['radius_m'],
+        'office_ip_allowlist': '\n'.join(cfg['ip_allowlist']),
+        'gps_configured': cfg['latitude'] is not None and cfg['longitude'] is not None,
+        'ip_configured': len(cfg['ip_allowlist']) > 0,
+        'current_client_ip': get_client_ip(),
+    })
+
+
+@api.route('/settings/presence', methods=['POST'])
+@jwt_required()
+def update_presence_settings():
+    user = _current_user()
+    if not _is_admin(user):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.json or {}
+    enabled = bool(data.get('enabled', True))
+    latitude = _parse_optional_float(data.get('company_latitude'))
+    longitude = _parse_optional_float(data.get('company_longitude'))
+
+    if latitude is not None and not (-90 <= latitude <= 90):
+        return jsonify({'error': 'Latitude must be between -90 and 90.'}), 400
+    if longitude is not None and not (-180 <= longitude <= 180):
+        return jsonify({'error': 'Longitude must be between -180 and 180.'}), 400
+    if (latitude is None) != (longitude is None):
+        return jsonify({'error': 'Provide both latitude and longitude for the company location.'}), 400
+
+    try:
+        radius = max(1, min(int(data.get('allowed_radius_m') or 150), 10000))
+    except (TypeError, ValueError):
+        radius = 150
+
+    raw_allowlist = data.get('office_ip_allowlist') or ''
+    entries = [e.strip() for e in raw_allowlist.replace(',', '\n').split() if e.strip()]
+    invalid = []
+    import ipaddress
+    for entry in entries:
+        try:
+            ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            invalid.append(entry)
+    if invalid:
+        return jsonify({'error': 'Invalid office IP or network range: ' + ', '.join(invalid)}), 400
+
+    cfg = save_presence_config(
+        enabled=enabled,
+        latitude=latitude,
+        longitude=longitude,
+        radius_m=radius,
+        ip_allowlist='\n'.join(entries),
+    )
+    return jsonify({
+        'enabled': cfg['enabled'],
+        'company_latitude': cfg['latitude'],
+        'company_longitude': cfg['longitude'],
+        'allowed_radius_m': cfg['radius_m'],
+        'office_ip_allowlist': '\n'.join(cfg['ip_allowlist']),
+        'gps_configured': cfg['latitude'] is not None and cfg['longitude'] is not None,
+        'ip_configured': len(cfg['ip_allowlist']) > 0,
+    })
+
+
+@api.route('/security/barcode', methods=['GET'])
+@jwt_required()
+def get_security_barcode():
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+    if not (user.role and user.role.name == 'Security'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if not user.gate_barcode:
+        user.gate_barcode = f"GATE-{user.username.upper()}"
+        db.session.commit()
+    return jsonify({'barcode': user.gate_barcode})
+
+
+@api.route('/attendance/mine', methods=['GET'])
+@jwt_required()
+def my_attendance():
+    """
+    Attendance history for the logged-in employee.
+    Query params: from=YYYY-MM-DD, to=YYYY-MM-DD (optional).
+    """
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+    employee = user.employee if user.employee_id else None
+    if not employee:
+        return jsonify({'error': 'No employee profile linked to this account'}), 400
+
+    from_str = request.args.get('from')
+    to_str = request.args.get('to')
+    try:
+        if from_str:
+            from_d = datetime.strptime(from_str, '%Y-%m-%d').date()
+        else:
+            from_d = date.today() - timedelta(days=30)
+        if to_str:
+            to_d = datetime.strptime(to_str, '%Y-%m-%d').date()
+        else:
+            to_d = date.today()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    records = Attendance.query.filter(
+        Attendance.employee_id == employee.id,
+        Attendance.date >= from_d,
+        Attendance.date <= to_d
+    ).order_by(Attendance.date.desc()).all()
+
+    results = []
+    for r in records:
+        results.append({
+            'date': r.date.isoformat(),
+            'check_in': r.check_in.isoformat() if r.check_in else None,
+            'check_out': r.check_out.isoformat() if r.check_out else None,
+            'worked_minutes': r.worked_minutes,
+            'daily_overtime_minutes': r.daily_overtime_minutes,
+            'late_minutes': r.late_minutes,
+            'early_departure_minutes': r.early_departure_minutes,
+            'status': r.attendance_status,
+        })
+    return jsonify(results)
+
+
+@api.route('/attendance/mine/stats', methods=['GET'])
+@jwt_required()
+def my_attendance_stats():
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+    employee = user.employee if user.employee_id else None
+    if not employee:
+        return jsonify({'error': 'No employee profile linked to this account'}), 400
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    month_start = today.replace(day=1)
+
+    weekly = Attendance.query.filter(
+        Attendance.employee_id == employee.id,
+        Attendance.date >= monday,
+        Attendance.date <= sunday
+    ).all()
+    monthly = Attendance.query.filter(
+        Attendance.employee_id == employee.id,
+        Attendance.date >= month_start,
+        Attendance.date <= today
+    ).all()
+
+    week_worked = sum(a.worked_minutes for a in weekly)
+    week_ot = sum(a.daily_overtime_minutes for a in weekly)
+    month_worked = sum(a.worked_minutes for a in monthly)
+    month_ot = sum(a.daily_overtime_minutes for a in monthly)
+
+    t = Attendance.query.filter_by(employee_id=employee.id, date=today).first()
+    today_attendance = {
+        'status': t.attendance_status if t else 'Absent',
+        'checked_in': t.check_in.isoformat() if t and t.check_in else None,
+        'checked_out': t.check_out.isoformat() if t and t.check_out else None,
+        'worked_minutes': t.worked_minutes if t and t.check_out else 0,
+    }
+
+    return jsonify({
+        'today': today_attendance,
+        'week_worked_minutes': week_worked,
+        'week_overtime_minutes': week_ot,
+        'month_worked_minutes': month_worked,
+        'month_overtime_minutes': month_ot,
+        'required_weekly_hours': employee.weekly_working_hours or 40,
+    })
+
+
+@api.route('/profile', methods=['GET'])
+@jwt_required()
+def get_profile():
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+
+    employee = user.employee if user.employee_id else None
+    payload = {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'role': user.role.name if user.role else 'Staff',
+    }
+    if employee:
+        payload['employee'] = {
+            'id': employee.id,
+            'employee_number': employee.employee_number,
+            'department': employee.department.name if employee.department else None,
+            'department_id': employee.department_id,
+            'position': employee.position,
+            'employment_status': employee.employment_status,
+            'weekly_working_hours': employee.weekly_working_hours,
+            'email': employee.email,
+            'emergency_contact': employee.emergency_contact,
+            'barcode_value': employee.barcode_value,
+        }
+    return jsonify(payload)
+
+
+@api.route('/profile/password', methods=['POST'])
+@jwt_required()
+def change_password():
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+
+    data = request.json or {}
+    current_password = data.get('current_password') or ''
+    new_password = data.get('new_password') or ''
+
+    if not check_password_hash(user.password_hash, current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 400
+    if len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters'}), 400
+
+    user.password_hash = generate_password_hash(new_password)
+    db.session.commit()
+    return jsonify({'message': 'Password updated successfully'}), 200
+
+
+def _generate_temporary_password():
+    alphabet = _string.ascii_letters + _string.digits
+    code = ''.join(secrets.choice(alphabet) for _ in range(10))
+    return f"Tmc@{code}"
+
+
+@api.route('/users', methods=['GET'])
+@jwt_required()
+def list_users():
+    """Admin-only list of login accounts (for password resets)."""
+    user = _current_user()
+    if not _is_admin(user):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    users = User.query.order_by(User.id).all()
+    payload = []
+    for u in users:
+        emp_no = u.employee.employee_number if u.employee else None
+        payload.append({
+            'id': u.id,
+            'username': u.username,
+            'email': u.email,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
+            'role': u.role.name if u.role else 'Staff',
+            'employee_number': emp_no,
+            'gate_barcode': u.gate_barcode,
+        })
+    return jsonify(payload), 200
+
+
+@api.route('/users/<int:user_id>/password', methods=['POST'])
+@jwt_required()
+def admin_reset_password(user_id):
+    """
+    Admin-only password reset (for when a person forgets their password).
+    Accepts either an explicit `password` or `generate: true` to issue a
+    random temporary password that is returned once for the admin to share.
+    """
+    admin = _current_user()
+    if not _is_admin(admin):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    target = User.query.get_or_404(user_id)
+    data = request.json or {}
+    new_password = (data.get('password') or '')
+    generate = bool(data.get('generate'))
+
+    if not generate and not new_password:
+        return jsonify({'error': 'Enter a new password or choose to generate one'}), 400
+    if not generate and len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+    temporary = None
+    if generate:
+        temporary = _generate_temporary_password()
+        new_password = temporary
+
+    target.password_hash = generate_password_hash(new_password)
+    db.session.commit()
+
+    payload = {'message': f"Password updated for '{target.username}'"}
+    if temporary:
+        payload['temporary_password'] = temporary
+    return jsonify(payload), 200
 
 
 @api.route('/employees/<int:employee_id>/barcode/regenerate', methods=['POST'])
@@ -424,7 +918,11 @@ def get_recent_scan_logs():
             'device': l.device,
             'result': l.scan_result,
             'action': l.attendance_action,
-            'message': l.message
+            'message': l.message,
+            'verified': l.verified,
+            'verification_method': l.verification_method,
+            'scan_ip': l.scan_ip,
+            'distance_m': l.distance_m,
         })
     return jsonify(results)
 

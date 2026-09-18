@@ -95,25 +95,25 @@ const Reports = () => {
         </button>
       </div>
 
-      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="mc-page mc-page-stack">
         {error && (
-          <div className="alert alert-danger d-flex align-items-center gap-2 mb-0 border-0" role="alert" style={{ borderRadius: '10px', fontSize: '13px' }}>
+          <div className="alert alert-danger d-flex align-items-center gap-2 mb-0 border-0" role="alert" style={{ borderRadius: '14px', fontSize: '13px' }}>
             <ShieldAlert size={18} />
             {error}
           </div>
         )}
 
-        <div className="card" style={{ padding: '14px 16px' }}>
-          <div className="row g-2 align-items-end">
-            <div className="col-md-3">
+        <div className="card" style={{ padding: '18px 20px' }}>
+          <div className="row g-3 align-items-end">
+            <div className="col-12 col-md-3">
               <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#6B8070' }}>From</label>
               <input className="form-control" type="date" value={range.from} onChange={(e) => setRange((s) => ({ ...s, from: e.target.value }))} />
             </div>
-            <div className="col-md-3">
+            <div className="col-12 col-md-3">
               <label className="form-label" style={{ fontSize: 12, fontWeight: 700, color: '#6B8070' }}>To</label>
               <input className="form-control" type="date" value={range.to} onChange={(e) => setRange((s) => ({ ...s, to: e.target.value }))} />
             </div>
-            <div className="col-md-6 d-flex gap-2 justify-content-end">
+            <div className="col-12 col-md-6 d-flex gap-2 justify-content-md-end flex-wrap">
               <button className="btn btn-success" onClick={() => load(true)}>Run Report</button>
               <button className="btn btn-outline-primary d-flex align-items-center gap-2" onClick={() => {
                 const header = ['Date', 'Employee No', 'Employee', 'Department', 'Check In', 'Check Out', 'Worked Time', 'Overtime', 'Late', 'Early', 'Status'];
@@ -143,14 +143,14 @@ const Reports = () => {
           <div className="col-12 col-lg-6">
             <div className="card" style={{ padding: '18px 20px' }}>
               <div style={{ fontWeight: 900, color: '#1E3027' }}>Totals (Attendance)</div>
-              <div style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                <div style={{ background: '#F0F7F2', border: '1px solid #C8EDD1', borderRadius: 10, padding: 12, minWidth: 220 }}>
-                  <div style={{ fontSize: 12, color: '#6B8070', fontWeight: 700 }}>Worked</div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: '#1E3027' }}>{minutesToHM(totals.worked)}</div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <div className="mc-total-tile">
+                  <div className="mc-total-label">Worked</div>
+                  <div className="mc-total-value">{minutesToHM(totals.worked)}</div>
                 </div>
-                <div style={{ background: '#E6F5EB', border: '1px solid #C8EDD1', borderRadius: 10, padding: 12, minWidth: 220 }}>
-                  <div style={{ fontSize: 12, color: '#1A8A35', fontWeight: 800 }}>Overtime</div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: '#1E3027' }}>{minutesToHM(totals.ot)}</div>
+                <div className="mc-total-tile">
+                  <div className="mc-total-label" style={{ color: '#1A8A35' }}>Overtime</div>
+                  <div className="mc-total-value">{minutesToHM(totals.ot)}</div>
                 </div>
               </div>
             </div>
@@ -170,11 +170,11 @@ const Reports = () => {
             <span>Attendance Records</span>
             <span style={{ fontSize: 12, color: '#6B8070', fontWeight: 400 }}>{attendanceRows.length} rows</span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table mb-0">
+          <div className="mc-table-scroll">
+            <table className="table mb-0 mc-table-wide">
               <thead>
                 <tr>
-                  <th style={{ paddingLeft: '24px !important' }}>Date</th>
+                  <th className="mc-th-first">Date</th>
                   <th>Employee</th>
                   <th>Department</th>
                   <th>Check-In</th>

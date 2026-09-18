@@ -1,8 +1,8 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Building2, ScanLine, FileBarChart, HeartPulse, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, FileBarChart, HeartPulse, LogOut, ShieldCheck, KeyRound } from 'lucide-react';
 
-const Sidebar = () => {
+const Sidebar = ({ open = false, onClose = () => {} }) => {
   const navigate = useNavigate();
 
   const userString = localStorage.getItem('user');
@@ -16,15 +16,19 @@ const Sidebar = () => {
     navigate('/login');
   };
 
+  const handleNav = () => {
+    if (onClose) onClose();
+  };
+
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${open ? 'open' : ''}`}>
       {/* Brand */}
-      <NavLink to="/" className="sidebar-brand">
+      <NavLink to="/" className="sidebar-brand" onClick={handleNav}>
         <div className="brand-logo">
           <HeartPulse size={22} />
         </div>
         <div className="brand-text">
-          <span className="brand-title">Tait Medical Centre</span>
+          <span className="brand-title">Medi<span className="brand-accent">Shift</span></span>
           <span className="brand-subtitle">HR &amp; Attendance</span>
         </div>
       </NavLink>
@@ -33,33 +37,39 @@ const Sidebar = () => {
       <p className="section-header">Main Menu</p>
       <ul className="sidebar-nav">
         <li>
-          <NavLink to="/" end className="nav-link">
+          <NavLink to="/" end className="nav-link" onClick={handleNav}>
             <LayoutDashboard size={18} />
             Dashboard
           </NavLink>
         </li>
         <li>
-          <NavLink to="/attendance" className="nav-link">
-            <ScanLine size={18} />
-            Attendance Scanner
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to="/employees" className="nav-link">
+          <NavLink to="/employees" className="nav-link" onClick={handleNav}>
             <Users size={18} />
             Employees
           </NavLink>
         </li>
         <li>
-          <NavLink to="/departments" className="nav-link">
+          <NavLink to="/users" className="nav-link" onClick={handleNav}>
+            <KeyRound size={18} />
+            Login Accounts
+          </NavLink>
+        </li>
+        <li>
+          <NavLink to="/departments" className="nav-link" onClick={handleNav}>
             <Building2 size={18} />
             Departments
           </NavLink>
         </li>
         <li>
-          <NavLink to="/reports" className="nav-link">
+          <NavLink to="/reports" className="nav-link" onClick={handleNav}>
             <FileBarChart size={18} />
             Reports
+          </NavLink>
+        </li>
+        <li>
+          <NavLink to="/settings" className="nav-link" onClick={handleNav}>
+            <ShieldCheck size={18} />
+            Attendance Security
           </NavLink>
         </li>
       </ul>

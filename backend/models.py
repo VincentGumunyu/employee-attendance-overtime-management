@@ -16,6 +16,9 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role_id = db.Column(db.Integer, db.ForeignKey('roles.id'), nullable=False)
     role = db.relationship('Role', backref=db.backref('users', lazy=True))
+    employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=True)
+    employee = db.relationship('Employee', backref=db.backref('user', uselist=False))
+    gate_barcode = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Department(db.Model):
@@ -83,3 +86,13 @@ class ScanLog(db.Model):
     scan_result = db.Column(db.String(50), nullable=False)  # success, not_registered, rejected
     attendance_action = db.Column(db.String(50), nullable=True)  # check_in, check_out
     message = db.Column(db.String(255), nullable=True)
+    verified = db.Column(db.Boolean, nullable=True)  # presence verification passed
+    verification_method = db.Column(db.String(20), nullable=True)  # gps or ip
+    scan_ip = db.Column(db.String(64), nullable=True)
+    distance_m = db.Column(db.Integer, nullable=True)  # distance from company location (GPS)
+
+class SystemSetting(db.Model):
+    __tablename__ = 'system_settings'
+    key = db.Column(db.String(80), primary_key=True)
+    value = db.Column(db.Text, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

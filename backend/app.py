@@ -33,15 +33,47 @@ def _ensure_sqlite_schema_updates():
         db.session.execute(db.text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100)"))
     if not has_column("users", "last_name"):
         db.session.execute(db.text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100)"))
+    if not has_column("users", "employee_id"):
+        db.session.execute(db.text("ALTER TABLE users ADD COLUMN employee_id INTEGER"))
+    if not has_column("users", "gate_barcode"):
+        db.session.execute(db.text("ALTER TABLE users ADD COLUMN gate_barcode VARCHAR(100)"))
+
+    # scan_logs presence columns
+    if not has_column("scan_logs", "verified"):
+        db.session.execute(db.text("ALTER TABLE scan_logs ADD COLUMN verified BOOLEAN"))
+    if not has_column("scan_logs", "verification_method"):
+        db.session.execute(db.text("ALTER TABLE scan_logs ADD COLUMN verification_method VARCHAR(20)"))
+    if not has_column("scan_logs", "scan_ip"):
+        db.session.execute(db.text("ALTER TABLE scan_logs ADD COLUMN scan_ip VARCHAR(64)"))
+    if not has_column("scan_logs", "distance_m"):
+        db.session.execute(db.text("ALTER TABLE scan_logs ADD COLUMN distance_m INTEGER"))
 
     db.session.commit()
 
+DEFAULT_DEPARTMENTS = [
+    "Administration",
+    "Human Resources",
+    "Finance",
+    "Information Technology",
+    "Security",
+    "Nursing",
+    "Clinical Services",
+    "Pharmacy",
+    "Laboratory",
+    "Health Records",
+    "Housekeeping",
+    "Catering",
+    "Maintenance",
+    "Transport",
+]
+
 def _ensure_default_seed():
     """
-    Seed default roles and users if tables are empty.
+    Seed default roles, departments, and users if tables are empty.
     """
-    from models import Role, User
+    from models import Role, Department, User, Employee
     from werkzeug.security import generate_password_hash
+    from services import BarcodeService, CredentialService
     
     try:
         if Role.query.first() is None:
@@ -50,10 +82,15 @@ def _ensure_default_seed():
             security_role = Role(name="Security")
             db.session.add_all([admin_role, staff_role, security_role])
             db.session.commit()
+
+        if Department.query.first() is None:
+            db.session.add_all([Department(name=d) for d in DEFAULT_DEPARTMENTS])
+            db.session.commit()
             
         if User.query.first() is None:
             admin_role = Role.query.filter_by(name="Admin").first()
             security_role = Role.query.filter_by(name="Security").first()
+            staff_role = Role.query.filter_by(name="Staff").first()
             
             peter_user = User(
                 username="peter",
@@ -71,9 +108,37 @@ def _ensure_default_seed():
                 last_name="Terminal",
                 email="security@taitmedical.co.zw",
                 password_hash=generate_password_hash("Gate@2024"),
-                role_id=security_role.id
+                role_id=security_role.id,
+                gate_barcode="GATE-SECURITY"
             )
             db.session.add(security_user)
+
+            # Demo staff account + linked employee so the employee self-service
+            # flow can be tested out of the box.
+            if staff_role and Department.query.filter_by(name="Nursing").first():
+                demo_emp = Employee(
+                    employee_number=CredentialService.generate_next_employee_number(),
+                    first_name="Tapiwa",
+                    last_name="Ncube",
+                    email="tapiwa.ncube@taitmedical.co.zw",
+                    department_id=Department.query.filter_by(name="Nursing").first().id,
+                    position="Staff Nurse",
+                    employment_status="Active",
+                    weekly_working_hours=40,
+                )
+                BarcodeService.assign_barcode(demo_emp, force=False)
+                db.session.add(demo_emp)
+                db.session.flush()
+                demo_user = User(
+                    username="tapiwa.ncube",
+                    first_name="Tapiwa",
+                    last_name="Ncube",
+                    email="tapiwa.ncube@taitmedical.co.zw",
+                    password_hash=generate_password_hash("Tapiwa@2024"),
+                    role_id=staff_role.id,
+                    employee_id=demo_emp.id,
+                )
+                db.session.add(demo_user)
             db.session.commit()
     except Exception as e:
         db.session.rollback()
@@ -91,6 +156,10 @@ def create_app(config_class=Config):
         import models
         db.create_all()
         _ensure_sqlite_schema_updates()
+
+        from presence import seed_default_presence_settings
+        seed_default_presence_settings(app.config)
+
         _ensure_default_seed()
 
     from routes import api as api_bp

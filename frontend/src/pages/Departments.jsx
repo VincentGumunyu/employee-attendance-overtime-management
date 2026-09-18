@@ -95,16 +95,16 @@ const Departments = () => {
         </button>
       </div>
 
-      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="mc-page mc-page-stack">
         {error && (
-          <div className="alert alert-danger mb-0 border-0" role="alert" style={{ borderRadius: '10px', fontSize: '13px' }}>
+          <div className="alert alert-danger mb-0 border-0" role="alert" style={{ borderRadius: '14px', fontSize: '13px' }}>
             {error}
           </div>
         )}
 
         <div className="card" style={{ padding: '18px 20px' }}>
-          <form onSubmit={create} className="d-flex align-items-center gap-2">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+          <form onSubmit={create} className="d-flex align-items-center gap-2 flex-wrap">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 220 }}>
               <div className="stat-card-icon" style={{ background: 'rgba(45,181,74,0.1)' }}>
                 <Building2 size={18} color="#2DB54A" />
               </div>
@@ -129,11 +129,11 @@ const Departments = () => {
               {departments.length} total
             </span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="mc-table-scroll">
             <table className="table mb-0">
               <thead>
                 <tr>
-                  <th style={{ paddingLeft: '24px !important' }}>Name</th>
+                  <th className="mc-th-first">Name</th>
                   <th style={{ width: 180 }}>Actions</th>
                 </tr>
               </thead>

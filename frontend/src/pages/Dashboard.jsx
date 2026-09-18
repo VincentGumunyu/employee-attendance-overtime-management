@@ -99,11 +99,11 @@ const Dashboard = () => {
         </button>
       </div>
 
-      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div className="mc-page d-flex flex-column" style={{ gap: '24px' }}>
 
         {error && (
           <div className="alert alert-danger d-flex align-items-center gap-2 mb-0 border-0" role="alert"
-            style={{ borderRadius: '10px', fontSize: '13px' }}>
+            style={{ borderRadius: '14px', fontSize: '13px' }}>
             <ShieldAlert size={18} />
             {error}
           </div>
@@ -113,76 +113,68 @@ const Dashboard = () => {
         <div className="row g-3">
           {/* Total Employees */}
           <div className="col-6 col-lg-3">
-            <div className="card" style={{ padding: '20px 22px' }}>
-              <div className="d-flex align-items-center justify-content-between">
+            <div className="card mc-stat">
+              <div className="mc-stat-head">
                 <div>
-                  <div className="stat-label">Total Employees</div>
-                  <div className="stat-value" style={{ color: '#1E3027' }}>{stats.total_employees}</div>
+                  <div className="mc-stat-label">Total Employees</div>
+                  <div className="mc-stat-value">{stats.total_employees}</div>
                 </div>
-                <div className="stat-card-icon" style={{ background: 'rgba(45,181,74,0.1)' }}>
-                  <Users size={24} color="#2DB54A" />
+                <div className="mc-stat-icon" style={{ background: 'rgba(45,181,74,0.12)', color: '#2DB54A' }}>
+                  <Users size={22} />
                 </div>
               </div>
-              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #F0F4F1', fontSize: '12px', color: '#6B8070' }}>
-                Active workforce
-              </div>
+              <div className="mc-stat-foot">Active workforce</div>
             </div>
           </div>
 
           {/* Present Today */}
           <div className="col-6 col-lg-3">
-            <div className="card" style={{ padding: '20px 22px' }}>
-              <div className="d-flex align-items-center justify-content-between">
+            <div className="card mc-stat">
+              <div className="mc-stat-head">
                 <div>
-                  <div className="stat-label">Present Today</div>
-                  <div className="stat-value" style={{ color: '#1A8A35' }}>{stats.present_today}</div>
+                  <div className="mc-stat-label">Present Today</div>
+                  <div className="mc-stat-value" style={{ color: '#1A8A35' }}>{stats.present_today}</div>
                 </div>
-                <div className="stat-card-icon" style={{ background: 'rgba(45,181,74,0.1)' }}>
-                  <UserCheck size={24} color="#2DB54A" />
+                <div className="mc-stat-icon" style={{ background: 'rgba(45,181,74,0.12)', color: '#2DB54A' }}>
+                  <UserCheck size={22} />
                 </div>
               </div>
-              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ flex: 1, height: '4px', borderRadius: '4px', background: '#E5EDE7', overflow: 'hidden' }}>
-                  <div style={{ width: `${attendanceRate}%`, height: '100%', background: '#2DB54A', borderRadius: '4px', transition: 'width 0.6s ease' }} />
-                </div>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: '#2DB54A' }}>{attendanceRate}%</span>
+              <div className="mc-stat-foot">
+                <span className="mc-mini-progress"><span style={{ width: `${attendanceRate}%` }} /></span>
+                <span className="mc-mini-label">{attendanceRate}%</span>
               </div>
             </div>
           </div>
 
           {/* Late Today */}
           <div className="col-6 col-lg-3">
-            <div className="card" style={{ padding: '20px 22px' }}>
-              <div className="d-flex align-items-center justify-content-between">
+            <div className="card mc-stat">
+              <div className="mc-stat-head">
                 <div>
-                  <div className="stat-label">Late Arrivals</div>
-                  <div className="stat-value" style={{ color: '#B45309' }}>{stats.late_today}</div>
+                  <div className="mc-stat-label">Late Arrivals</div>
+                  <div className="mc-stat-value" style={{ color: '#B45309' }}>{stats.late_today}</div>
                 </div>
-                <div className="stat-card-icon" style={{ background: 'rgba(245,158,11,0.1)' }}>
-                  <Clock size={24} color="#F59E0B" />
+                <div className="mc-stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#B45309' }}>
+                  <Clock size={22} />
                 </div>
               </div>
-              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #F0F4F1', fontSize: '12px', color: '#6B8070' }}>
-                Checked in after 08:00
-              </div>
+              <div className="mc-stat-foot">Checked in after 08:00</div>
             </div>
           </div>
 
           {/* Absent Today */}
           <div className="col-6 col-lg-3">
-            <div className="card" style={{ padding: '20px 22px' }}>
-              <div className="d-flex align-items-center justify-content-between">
+            <div className="card mc-stat">
+              <div className="mc-stat-head">
                 <div>
-                  <div className="stat-label">Absent Today</div>
-                  <div className="stat-value" style={{ color: '#B91C1C' }}>{stats.absent_today}</div>
+                  <div className="mc-stat-label">Absent Today</div>
+                  <div className="mc-stat-value" style={{ color: '#B91C1C' }}>{stats.absent_today}</div>
                 </div>
-                <div className="stat-card-icon" style={{ background: 'rgba(239,68,68,0.1)' }}>
-                  <UserX size={24} color="#EF4444" />
+                <div className="mc-stat-icon" style={{ background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}>
+                  <UserX size={22} />
                 </div>
               </div>
-              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #F0F4F1', fontSize: '12px', color: '#6B8070' }}>
-                No check-in recorded
-              </div>
+              <div className="mc-stat-foot">No check-in recorded</div>
             </div>
           </div>
         </div>
@@ -199,11 +191,11 @@ const Dashboard = () => {
                   Today · Auto-refreshes every 10s
                 </span>
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table mb-0">
+              <div className="mc-table-scroll">
+                <table className="table mb-0 mc-table-wide">
                   <thead>
                     <tr>
-                      <th style={{ paddingLeft: '24px !important' }}>Employee</th>
+                      <th className="mc-th-first">Employee</th>
                       <th>Department</th>
                       <th>Date</th>
                       <th>Check-In</th>
