@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Building2, FileBarChart, HeartPulse, LogOut, ShieldCheck, KeyRound, UserRound } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, FileBarChart, HeartPulse, LogOut, ShieldCheck, KeyRound, UserRound, ScanLine } from 'lucide-react';
 
 const Sidebar = ({ open = false, onClose = () => {} }) => {
   const navigate = useNavigate();
@@ -40,6 +40,12 @@ const Sidebar = ({ open = false, onClose = () => {} }) => {
           <NavLink to="/" end className="nav-link" onClick={handleNav}>
             <LayoutDashboard size={18} />
             Dashboard
+          </NavLink>
+        </li>
+        <li>
+          <NavLink to="/scan" className="nav-link" onClick={handleNav}>
+            <ScanLine size={18} />
+            Scan to Work
           </NavLink>
         </li>
         <li>

@@ -25,9 +25,6 @@
 .login-card {
   width: 100%;
   max-width: 430px;
-  max-height: 100%;
-  overflow-y: auto;
-  scrollbar-width: thin;
   background: #fff;
   border-radius: 20px;
   border: 1px solid #E5EDE7;
@@ -580,4 +577,50 @@
   .login-submit {
     height: 44px;
   }
+}
+
+/* ═══════════════════════════════════════════
+   SHORT / LANDSCAPE SCREENS — no scrolling,
+   the card is always centered and fits.
+   ═══════════════════════════════════════════ */
+
+@media (max-height: 720px) {
+  .login-page { padding: 16px; }
+  .login-card { padding: 28px 30px 24px; }
+  .login-brand-mark { width: 50px; height: 50px; border-radius: 14px; margin-bottom: 14px; }
+  .login-brand-wordmark { font-size: 19px; }
+  .login-brand-eyebrow { margin-bottom: 16px; }
+  .login-field { margin-bottom: 12px; }
+  .login-input { height: 44px; }
+  .login-forgot { margin-bottom: 16px; }
+  .login-submit { height: 46px; }
+  .login-support { margin-top: 16px; }
+}
+
+@media (max-height: 600px) {
+  .login-page { padding: 10px; }
+  .login-card { padding: 18px 20px 16px; border-radius: 16px; }
+  .login-brand-mark { width: 40px; height: 40px; border-radius: 12px; margin-bottom: 8px; box-shadow: 0 8px 18px -8px rgba(45, 181, 74, 0.5); }
+  .login-brand-wordmark { font-size: 16px; margin-bottom: 2px; }
+  .login-brand-eyebrow { font-size: 9px; letter-spacing: 0.16em; margin-bottom: 10px; }
+  .login-error { padding: 8px 12px; margin-bottom: 10px; }
+  .login-field { margin-bottom: 8px; }
+  .login-field-label { margin-bottom: 4px; font-size: 12px; }
+  .login-input { height: 40px; font-size: 13.5px; }
+  .login-forgot { margin-bottom: 10px; }
+  .login-forgot a,
+  .login-forgot-btn { font-size: 12px; }
+  .login-submit { height: 42px; font-size: 14px; }
+  .login-support { margin-top: 10px; font-size: 12px; }
+}
+
+@media (max-height: 520px) {
+  .login-page { padding: 8px; }
+  .login-card { padding: 14px 16px 12px; max-width: 400px; }
+  .login-brand-mark { width: 34px; height: 34px; border-radius: 10px; margin-bottom: 6px; }
+  .login-brand-wordmark { font-size: 15px; }
+  .login-brand-eyebrow { display: none; }
+  .login-error { margin-bottom: 8px; }
+  .login-submit { height: 40px; }
+  .login-support { margin-top: 8px; }
 }

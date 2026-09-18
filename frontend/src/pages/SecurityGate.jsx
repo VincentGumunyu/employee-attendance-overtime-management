@@ -99,7 +99,7 @@ const SecurityGate = () => {
           <div style={{ color: '#B91C1C', fontWeight: '600', fontSize: '14px' }}>{error}</div>
         ) : barcode ? (
           <div className="sg-barcode-well">
-            <svg ref={barcodeRef} style={{ width: '100%', maxHeight: '130px' }} />
+            <svg ref={barcodeRef} className="sg-barcode-svg" style={{ width: '100%' }} />
             <div className="sg-live-chip">
               <ShieldCheck size={14} />
               Live gate barcode — refresh this screen to rotate

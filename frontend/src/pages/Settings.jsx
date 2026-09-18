@@ -99,7 +99,7 @@ const Settings = () => {
       <div className="dashboard-topbar">
         <div className="topbar-title">
           <h2>Attendance Security</h2>
-          <p>Verify staff are physically at the company before they clock in/out</p>
+          <p>Verify staff are physically at the company before they clock in/out — global, applies to everyone</p>
         </div>
         <button
           className="btn-outline-tmc d-flex align-items-center gap-2"
@@ -178,10 +178,17 @@ const Settings = () => {
 
         <div className="card" style={{ padding: '20px 22px' }}>
           <h5 style={{ fontWeight: 800, color: '#1E3027', marginBottom: 4 }}>How it works</h5>
-          <p style={{ fontSize: '13px', color: '#6B8070', lineHeight: 1.6, marginBottom: 18 }}>
+          <p style={{ fontSize: '13px', color: '#6B8070', lineHeight: 1.6, marginBottom: 10 }}>
             When an employee clocks in, the system checks their phone MapPin against the company location AND their
             network connection against the office IP list. The scan is <strong>accepted if either matches</strong> and
             <strong> blocked if neither does</strong> — so a barcode typed from home can never be used.
+          </p>
+          <p style={{ fontSize: '13px', color: '#1A8A35', lineHeight: 1.6, marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <ShieldCheck size={15} style={{ marginTop: 2, minWidth: 15 }} />
+            <span>
+              These settings are <strong>system-wide</strong> — when any admin saves changes here, they are applied
+              immediately to every employee scan across the organisation.
+            </span>
           </p>
 
           <form onSubmit={save}>

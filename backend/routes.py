@@ -47,6 +47,40 @@ def _parse_optional_float(value):
 def _is_admin(user):
     return bool(user and user.role and user.role.name == 'Admin')
 
+def _ensure_employee_profile(user):
+    """
+    Returns the Employee profile linked to *user*, lazily creating one for
+    Admin accounts on first use so admins can clock in/out like any staff
+    member. Returns None when the account has no profile and isn't an Admin.
+    """
+    if user.employee_id and user.employee:
+        return user.employee
+    if not _is_admin(user):
+        return None
+
+    dept = Department.query.filter_by(name='Administration').first()
+    if not dept:
+        dept = Department(name='Administration')
+        db.session.add(dept)
+        db.session.flush()
+
+    employee = Employee(
+        employee_number=CredentialService.generate_next_employee_number(),
+        first_name=user.first_name or 'Admin',
+        last_name=user.last_name or '',
+        email=user.email,
+        department_id=dept.id,
+        position='Administration',
+        employment_status='Active',
+        weekly_working_hours=40,
+    )
+    BarcodeService.assign_barcode(employee, force=False)
+    db.session.add(employee)
+    db.session.flush()
+    user.employee_id = employee.id
+    db.session.commit()
+    return employee
+
 @api.route('/login', methods=['POST'])
 def login():
     data = request.json or {}
@@ -67,6 +101,11 @@ def login():
     if user.role and user.role.name == 'Security' and not user.gate_barcode:
         user.gate_barcode = f"GATE-{user.username.upper()}"
         db.session.commit()
+
+    # Admins are employees too: give them a linked employee profile so they
+    # appear in the employee list and can clock in/out at the security gate.
+    if user.role and user.role.name == 'Admin' and not (user.employee_id and user.employee):
+        _ensure_employee_profile(user)
 
     access_token = create_access_token(identity=str(user.id))
     return jsonify({
@@ -422,6 +461,8 @@ def self_scan():
         return jsonify({'error': 'Not authorized'}), 401
     employee = user.employee if user.employee_id else None
     if not employee:
+        employee = _ensure_employee_profile(user)
+    if not employee:
         return jsonify({'error': 'No employee profile linked to this account'}), 400
 
     # Presence check: the employee must be physically at the company. Accepts
@@ -583,6 +624,8 @@ def my_attendance():
         return jsonify({'error': 'Not authorized'}), 401
     employee = user.employee if user.employee_id else None
     if not employee:
+        employee = _ensure_employee_profile(user)
+    if not employee:
         return jsonify({'error': 'No employee profile linked to this account'}), 400
 
     from_str = request.args.get('from')
@@ -627,6 +670,8 @@ def my_attendance_stats():
     if not user:
         return jsonify({'error': 'Not authorized'}), 401
     employee = user.employee if user.employee_id else None
+    if not employee:
+        employee = _ensure_employee_profile(user)
     if not employee:
         return jsonify({'error': 'No employee profile linked to this account'}), 400
 
@@ -677,6 +722,8 @@ def get_profile():
         return jsonify({'error': 'Not authorized'}), 401
 
     employee = user.employee if user.employee_id else None
+    if not employee:
+        employee = _ensure_employee_profile(user)
     payload = {
         'id': user.id,
         'username': user.username,
@@ -729,6 +776,9 @@ def update_profile():
         user.email = email
         if user.employee_id and user.employee:
             user.employee.email = email
+    if user.employee_id and user.employee:
+        user.employee.first_name = user.first_name
+        user.employee.last_name = user.last_name
 
     db.session.commit()
     return jsonify({

@@ -15,6 +15,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Users from './pages/Users';
 import AdminProfile from './pages/AdminProfile';
+import AdminScan from './pages/AdminScan';
 import SecurityGate from './pages/SecurityGate';
 import EmployeeHome from './pages/employee/EmployeeHome';
 import EmployeeAttendance from './pages/employee/EmployeeAttendance';
@@ -139,6 +140,7 @@ function App() {
           <Route path="/departments" element={<Departments />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/scan" element={<AdminScan />} />
           <Route path="/profile" element={<AdminProfile />} />
         </Route>
 

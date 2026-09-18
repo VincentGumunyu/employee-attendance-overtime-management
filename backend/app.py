@@ -144,6 +144,45 @@ def _ensure_default_seed():
         db.session.rollback()
         print(f"Error seeding default database: {e}")
 
+def _ensure_admin_employee_profiles():
+    """
+    Every Admin account is also a hospital employee, so admins are visible in the
+    Employees list (including themselves) and can clock in/out at the security
+    gate. Creates a linked Employee profile for any admin that lacks one.
+    """
+    from models import Role, Department, Employee, User
+    from services import BarcodeService, CredentialService
+    try:
+        admin_role = Role.query.filter_by(name='Admin').first()
+        if not admin_role:
+            return
+        for user in User.query.filter_by(role_id=admin_role.id).all():
+            if user.employee_id and user.employee:
+                continue
+            dept = Department.query.filter_by(name='Administration').first()
+            if not dept:
+                dept = Department(name='Administration')
+                db.session.add(dept)
+                db.session.flush()
+            employee = Employee(
+                employee_number=CredentialService.generate_next_employee_number(),
+                first_name=user.first_name or 'Admin',
+                last_name=user.last_name or '',
+                email=user.email,
+                department_id=dept.id,
+                position='Administration',
+                employment_status='Active',
+                weekly_working_hours=40,
+            )
+            BarcodeService.assign_barcode(employee, force=False)
+            db.session.add(employee)
+            db.session.flush()
+            user.employee_id = employee.id
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error ensuring admin employee profiles: {e}")
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -161,6 +200,7 @@ def create_app(config_class=Config):
         seed_default_presence_settings(app.config)
 
         _ensure_default_seed()
+        _ensure_admin_employee_profiles()
 
     from routes import api as api_bp
     app.register_blueprint(api_bp, url_prefix='/api')

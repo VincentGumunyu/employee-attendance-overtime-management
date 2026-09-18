@@ -4,6 +4,7 @@ import {
   AlertCircle, RefreshCw, Lock, CheckCircle2, Activity, WifiOff, MapPin
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { BrowserMultiFormatReader } from '@zxing/library';
 import { api } from '../../lib/api';
 
 const fmtHM = (m) => {
@@ -60,10 +61,10 @@ const EmployeeHome = () => {
   const [statsLoading, setStatsLoading] = useState(true);
 
   const videoRef = useRef(null);
-  const streamRef = useRef(null);
   const lastValueRef = useRef('');
   const busyRef = useRef(false);
-  const detectorRef = useRef(null);
+  const readerRef = useRef(null);
+  const controlsRef = useRef(null);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -82,16 +83,7 @@ const EmployeeHome = () => {
   }, [loadStats]);
 
   useEffect(() => {
-    const supported = 'BarcodeDetector' in window;
-    if (supported) {
-      try {
-        detectorRef.current = new window.BarcodeDetector({ formats: ['code_128', 'qr_code'] });
-        setCameraSupported(true);
-      } catch {
-        detectorRef.current = null;
-        setCameraSupported(false);
-      }
-    } else {
+    if (!('mediaDevices' in navigator) || !navigator.mediaDevices?.getUserMedia) {
       setCameraSupported(false);
     }
   }, []);
@@ -99,18 +91,13 @@ const EmployeeHome = () => {
   // Clean up camera on unmount
   useEffect(() => {
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
+      try { controlsRef.current?.stop(); } catch { /* ignore */ }
+      controlsRef.current = null;
     };
   }, []);
 
   const startCamera = async () => {
     setError(null);
-    if (!cameraSupported) {
-      setError('Camera scanning is not supported by this browser. Use the manual entry below.');
-      return;
-    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraSupported(false);
       setError('Camera scanning is not supported by this device. Use the manual entry below.');
@@ -118,19 +105,26 @@ const EmployeeHome = () => {
     }
     setCameraStarting(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
-      streamRef.current = stream;
+      const reader = new BrowserMultiFormatReader();
+      readerRef.current = reader;
+      const controls = await reader.decodeFromConstraints(
+        { video: { facingMode: { ideal: 'environment' } }, audio: false },
+        videoRef.current,
+        (result) => {
+          if (result && !busyRef.current) {
+            const value = (result.getText() || '').trim().toUpperCase();
+            if (value && value !== lastValueRef.current) {
+              lastValueRef.current = value;
+              handleScan(value);
+            }
+          }
+        }
+      );
+      controlsRef.current = controls;
       setCameraOn(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
     } catch (err) {
       setCameraOn(false);
-      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError' || err.name === 'NotFoundError' || err.name === 'NotReadableError');
       setError(
         denied
           ? 'Camera permission was denied. Allow camera access in your browser settings, or use manual entry below.'
@@ -142,41 +136,11 @@ const EmployeeHome = () => {
   };
 
   const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
+    try { controlsRef.current?.stop(); } catch { /* ignore */ }
+    controlsRef.current = null;
+    readerRef.current = null;
     setCameraOn(false);
   };
-
-  // Detection loop
-  useEffect(() => {
-    if (!cameraOn || !detectorRef.current) return;
-    let cancelled = false;
-
-    const tick = async () => {
-      if (cancelled || busyRef.current) return;
-      const video = videoRef.current;
-      if (video && video.readyState >= 2 && !video.paused) {
-        try {
-          const codes = await detectorRef.current.detect(video);
-          if (codes && codes.length > 0) {
-            const value = (codes[0].rawValue || '').trim().toUpperCase();
-            if (value && value !== lastValueRef.current) {
-              lastValueRef.current = value;
-              await handleScan(value);
-            }
-          }
-        } catch {
-          // frame not ready — keep looping
-        }
-      }
-      setTimeout(tick, 180);
-    };
-    tick();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraOn]);
 
   const handleScan = async (barcode) => {
     busyRef.current = true;
@@ -347,9 +311,9 @@ const EmployeeHome = () => {
             </div>
 
             <div className="scanner-viewport">
+              <video ref={videoRef} playsInline muted className="scanner-video" aria-label="Live camera preview" />
               {cameraOn ? (
                 <>
-                  <video ref={videoRef} playsInline muted className="scanner-video" aria-label="Live camera preview" />
                   <div className="scanner-shade" aria-hidden="true" />
                   <span className="scanner-corner tl" aria-hidden="true" />
                   <span className="scanner-corner tr" aria-hidden="true" />
