@@ -115,14 +115,18 @@
     left: 0;
     width: 284px;
     height: 100vh;
+    height: 100dvh;
     z-index: 90;
     border-radius: 0 22px 22px 0;
     transform: translateX(-102%);
     box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    overflow: hidden;
   }
   .sidebar.open {
     transform: translateX(0);
     box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .sidebar.open::before {
     content: '';

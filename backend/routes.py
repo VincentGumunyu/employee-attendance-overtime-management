@@ -701,6 +701,46 @@ def get_profile():
     return jsonify(payload)
 
 
+@api.route('/profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    user = _current_user()
+    if not user:
+        return jsonify({'error': 'Not authorized'}), 401
+
+    data = request.json or {}
+    first_name = (data.get('first_name') or '').strip()[:60]
+    last_name = (data.get('last_name') or '').strip()[:60]
+    email = (data.get('email') or '').strip().lower()
+
+    if not first_name and not last_name and not email:
+        return jsonify({'error': 'Nothing to update'}), 400
+
+    if email:
+        conflict = User.query.filter(User.email == email, User.id != user.id).first()
+        if conflict:
+            return jsonify({'error': 'An account with this email already exists'}), 409
+
+    if first_name:
+        user.first_name = first_name
+    if last_name:
+        user.last_name = last_name
+    if email:
+        user.email = email
+        if user.employee_id and user.employee:
+            user.employee.email = email
+
+    db.session.commit()
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'role': user.role.name if user.role else 'Staff',
+    }), 200
+
+
 @api.route('/profile/password', methods=['POST'])
 @jwt_required()
 def change_password():

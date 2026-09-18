@@ -1,7 +1,9 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { HeartPulse, Menu } from 'lucide-react';
 
 const AdminAppBar = ({ onMenu }) => {
+  const navigate = useNavigate();
   const userString = localStorage.getItem('user');
   const user = userString ? JSON.parse(userString) : null;
   const fullName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Administrator';
@@ -20,11 +22,19 @@ const AdminAppBar = ({ onMenu }) => {
           <div className="admin-appbar-sub">Administration</div>
         </div>
       </div>
-      <img
+      <button
         className="admin-appbar-avatar"
-        src={`https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=2DB54A&color=fff&bold=true`}
-        alt={fullName}
-      />
+        onClick={() => navigate('/profile')}
+        title="My Profile"
+        aria-label="Open my profile"
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+      >
+        <img
+          className="admin-appbar-avatar"
+          src={`https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=2DB54A&color=fff&bold=true`}
+          alt={fullName}
+        />
+      </button>
     </div>
   );
 };

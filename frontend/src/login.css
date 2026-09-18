@@ -3,9 +3,10 @@
    ============================================= */
 
 .login-page {
-  min-height: 100vh;
-  min-height: 100svh;
+  height: 100vh;
+  height: 100svh;
   width: 100%;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,12 +17,17 @@
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   padding: 24px;
   box-sizing: border-box;
+  position: fixed;
+  inset: 0;
 }
 
 /* ─── Centered card ─── */
 .login-card {
   width: 100%;
   max-width: 430px;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: #fff;
   border-radius: 20px;
   border: 1px solid #E5EDE7;
