@@ -273,6 +273,15 @@ const AdminScan = () => {
           </div>
         )}
 
+        {scanResult && (
+          <div className="rise-in" style={{ marginBottom: 16 }}>
+            <ResultCard result={scanResult} />
+            <button type="button" className="btn btn-outline-tmc w-100 mt-3" style={{ minHeight: 42 }} onClick={resetScanner}>
+              <RefreshCw size={15} style={{ marginRight: 6 }} /> New Scan
+            </button>
+          </div>
+        )}
+
         <div className="row g-3">
           {/* Scanner */}
           <div className="col-12 col-lg-7">
@@ -363,92 +372,80 @@ const AdminScan = () => {
           {/* Status + History */}
           <div className="col-12 col-lg-5 d-flex flex-column" style={{ gap: 16 }}>
             <div className="card" style={{ padding: '20px' }}>
-              {scanResult ? (
-                <ResultCard result={scanResult} />
-              ) : (
-                <div aria-live="polite">
-                  <div className="d-flex align-items-center gap-3 mb-3">
-                    <span className="status-avatar">
-                      <HeartPulse size={22} />
-                    </span>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: '#3D5245', lineHeight: 1.3 }}>
-                        <strong>{greetingByHour()}, {firstName}.</strong>
-                      </div>
-                      {!statsLoading && (
-                        <div style={{ fontSize: 12.5, color: '#6B8070', marginTop: 2 }}>
-                          {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {statsLoading ? (
-                    <div className="d-flex align-items-center gap-2 py-2">
-                      <div className="spinner-border spinner-border-sm" style={{ color: '#2DB54A' }} role="status" aria-label="Loading status" />
-                      <span style={{ fontSize: 13, color: '#6B8070' }}>Loading status…</span>
-                    </div>
-                  ) : statusKind === 'in' ? (
-                    <div className="status-line green mb-2">
-                      <span className="status-dot green" aria-hidden="true" />
-                      <span>You're clocked in <Activity size={15} aria-hidden="true" style={{ verticalAlign: -2 }} /></span>
-                    </div>
-                  ) : statusKind === 'out' ? (
-                    <div className="status-line neutral mb-2">
-                      <span className="status-dot gray" aria-hidden="true" />
-                      <span>You're clocked out</span>
-                    </div>
-                  ) : (
-                    <div className="status-line amber mb-2">
-                      <span className="status-dot amber" aria-hidden="true" />
-                      <span>You haven't clocked in today</span>
-                    </div>
-                  )}
-
-                  {!statsLoading && statusKind === 'in' && (
-                    <>
-                      <div className="status-meta">
-                        <Calendar size={14} aria-hidden="true" /> Started at <strong style={{ color: '#1E3027' }}>{fmtTime(today.checked_in)}</strong>
-                      </div>
-                      <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
-                        Scan the barcode again when you leave to clock out.
-                      </div>
-                    </>
-                  )}
-                  {!statsLoading && statusKind === 'out' && (
-                    <>
-                      <div className="status-meta">
-                        <Clock size={14} aria-hidden="true" /> Today's hours: <strong style={{ color: '#1E3027' }}>{fmtHM(today.worked_minutes)}</strong>
-                      </div>
-                      {Number(stats.month_worked_minutes) > 0 && (
-                        <div className="status-meta">
-                          <Award size={14} aria-hidden="true" /> This month: <strong style={{ color: '#1E3027' }}>{fmtHM(stats.month_worked_minutes)}</strong>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {!statsLoading && statusKind === 'idle' && (
-                    <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
-                      Ready when you are — scan the gate barcode to clock in.
-                    </div>
-                  )}
-
-                  {scanResult && (
-                    <button type="button" className="btn btn-outline-secondary w-100 mt-3" style={{ minHeight: 42 }} onClick={resetScanner}>
-                      <RefreshCw size={15} style={{ marginRight: 6 }} /> New Scan
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {!scanResult && (
-                <div className="help-tip" style={{ marginTop: 16 }}>
-                  <UserRound size={15} color="#456255" aria-hidden="true" style={{ minWidth: 15, marginTop: 1 }} />
-                  <span>
-                    Your attendance is recorded under your admin profile and appears in the Employees list.
+              <div aria-live="polite">
+                <div className="d-flex align-items-center gap-3 mb-3">
+                  <span className="status-avatar">
+                    <HeartPulse size={22} />
                   </span>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: '#3D5245', lineHeight: 1.3 }}>
+                      <strong>{greetingByHour()}, {firstName}.</strong>
+                    </div>
+                    {!statsLoading && (
+                      <div style={{ fontSize: 12.5, color: '#6B8070', marginTop: 2 }}>
+                        {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+
+                {statsLoading ? (
+                  <div className="d-flex align-items-center gap-2 py-2">
+                    <div className="spinner-border spinner-border-sm" style={{ color: '#2DB54A' }} role="status" aria-label="Loading status" />
+                    <span style={{ fontSize: 13, color: '#6B8070' }}>Loading status…</span>
+                  </div>
+                ) : statusKind === 'in' ? (
+                  <div className="status-line green mb-2">
+                    <span className="status-dot green" aria-hidden="true" />
+                    <span>You're clocked in <Activity size={15} aria-hidden="true" style={{ verticalAlign: -2 }} /></span>
+                  </div>
+                ) : statusKind === 'out' ? (
+                  <div className="status-line neutral mb-2">
+                    <span className="status-dot gray" aria-hidden="true" />
+                    <span>You're clocked out</span>
+                  </div>
+                ) : (
+                  <div className="status-line amber mb-2">
+                    <span className="status-dot amber" aria-hidden="true" />
+                    <span>You haven't clocked in today</span>
+                  </div>
+                )}
+
+                {!statsLoading && statusKind === 'in' && (
+                  <>
+                    <div className="status-meta">
+                      <Calendar size={14} aria-hidden="true" /> Started at <strong style={{ color: '#1E3027' }}>{fmtTime(today.checked_in)}</strong>
+                    </div>
+                    <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
+                      Scan the barcode again when you leave to clock out.
+                    </div>
+                  </>
+                )}
+                {!statsLoading && statusKind === 'out' && (
+                  <>
+                    <div className="status-meta">
+                      <Clock size={14} aria-hidden="true" /> Today's hours: <strong style={{ color: '#1E3027' }}>{fmtHM(today.worked_minutes)}</strong>
+                    </div>
+                    {Number(stats.month_worked_minutes) > 0 && (
+                      <div className="status-meta">
+                        <Award size={14} aria-hidden="true" /> This month: <strong style={{ color: '#1E3027' }}>{fmtHM(stats.month_worked_minutes)}</strong>
+                      </div>
+                    )}
+                  </>
+                )}
+                {!statsLoading && statusKind === 'idle' && (
+                  <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
+                    Ready when you are — scan the gate barcode to clock in.
+                  </div>
+                )}
+              </div>
+
+              <div className="help-tip" style={{ marginTop: 16 }}>
+                <UserRound size={15} color="#456255" aria-hidden="true" style={{ minWidth: 15, marginTop: 1 }} />
+                <span>
+                  Your attendance is recorded under your admin profile and appears in the Employees list.
+                </span>
+              </div>
             </div>
 
             {/* History */}
