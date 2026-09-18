@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Camera, CameraOff, ScanLine, Calendar, Clock, Award, KeyRound,
-  AlertCircle, RefreshCw, Lock, CheckCircle2, Activity, UserRound, HeartPulse
+  AlertCircle, RefreshCw, Lock, CheckCircle2, Activity, UserRound,
+  WifiOff, MapPin, Info
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { BrowserMultiFormatReader } from '@zxing/library';
@@ -16,6 +17,14 @@ const fmtTime = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+};
+
+const timeAgo = (iso) => {
+  if (!iso) return '';
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
 };
 
 const toISODate = (d) => {
@@ -59,6 +68,7 @@ const AdminScan = () => {
   const userString = localStorage.getItem('user');
   const user = userString ? JSON.parse(userString) : null;
   const firstName = (user?.first_name || '').trim() || 'there';
+  const employeeName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Administrator';
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraSupported, setCameraSupported] = useState(true);
@@ -248,252 +258,295 @@ const AdminScan = () => {
   const statusKind = today?.checked_in ? (today.checked_out ? 'out' : 'in') : 'idle';
 
   return (
-    <div style={{ height: '100%' }}>
-      <div className="dashboard-topbar">
-        <div className="topbar-title">
-          <h2>Scan to Work</h2>
-          <p>Clock in / clock out like staff by scanning the gate barcode on your phone</p>
+    <div className="pt-page">
+      {/* Page header */}
+      <div className="pt-head">
+        <div>
+          <h1 className="pt-title">Scan to Work</h1>
+          <p className="pt-sub">
+            Clock in / clock out like staff by scanning the gate barcode on your phone.
+          </p>
         </div>
-        <button
-          className="btn-outline-tmc d-flex align-items-center gap-2"
-          onClick={() => { loadStats(); loadHistory(); }}
-          disabled={statsLoading}
-        >
-          <RefreshCw size={14} className={statsLoading ? 'spin' : ''} />
-          Refresh
-        </button>
+        <div className="pt-actions">
+          {scanResult && (
+            <button type="button" className="btn btn-outline-secondary d-flex align-items-center gap-1" style={{ minHeight: 42 }} onClick={resetScanner}>
+              <RefreshCw size={15} /> New Scan
+            </button>
+          )}
+          <button type="button" className="btn btn-outline-secondary d-flex align-items-center gap-1" style={{ minHeight: 42 }} onClick={() => { loadStats(); loadHistory(); }} disabled={statsLoading}>
+            <RefreshCw size={14} className={statsLoading ? 'spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="mc-page">
-        {error && (
-          <div className="alert alert-danger mb-3 border-0 d-flex align-items-center gap-2 align-items-start"
-            style={{ borderRadius: 14, fontSize: 13 }} role="alert" aria-live="polite">
-            {classifyError(error) === 'warn' ? <Lock size={16} aria-hidden="true" className="mt-1" /> : <AlertCircle size={16} aria-hidden="true" className="mt-1" />}
-            <span>{error}</span>
-          </div>
-        )}
-
-        {scanResult && (
-          <div className="rise-in" style={{ marginBottom: 16 }}>
-            <ResultCard result={scanResult} />
-            <button type="button" className="btn btn-outline-tmc w-100 mt-3" style={{ minHeight: 42 }} onClick={resetScanner}>
-              <RefreshCw size={15} style={{ marginRight: 6 }} /> New Scan
-            </button>
-          </div>
-        )}
-
-        <div className="row g-3">
-          {/* Scanner */}
-          <div className="col-12 col-lg-7">
-            <div className="card" style={{ padding: '20px' }}>
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <span className="panel-title">
-                  <ScanLine size={17} color="#2DB54A" aria-hidden="true" /> Camera Scanner
-                </span>
-                {cameraOn && (
-                  <button type="button" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" onClick={stopCamera} style={{ minHeight: 38 }}>
-                    <CameraOff size={14} aria-hidden="true" /> Stop Camera
-                  </button>
-                )}
-              </div>
-
-              <div className="scanner-viewport">
-                <video ref={videoRef} playsInline muted className="scanner-video" aria-label="Live camera preview" />
-                {cameraOn ? (
-                  <>
-                    <div className="scanner-shade" aria-hidden="true" />
-                    <span className="scanner-corner tl" aria-hidden="true" />
-                    <span className="scanner-corner tr" aria-hidden="true" />
-                    <span className="scanner-corner bl" aria-hidden="true" />
-                    <span className="scanner-corner br" aria-hidden="true" />
-                    <div className="scanner-target-hint" aria-hidden="true">
-                      <span className="hint-label">Align barcode within the frame</span>
-                    </div>
-                    <span className="scanner-chip">
-                      <span className="live-dot" aria-hidden="true" />
-                      {scanning ? 'Recording…' : 'Camera live'}
-                    </span>
-                  </>
-                ) : (
-                  <div className="scanner-empty">
-                    {cameraStarting ? (
-                      <>
-                        <div className="spinner-border" style={{ color: '#2DB54A' }} role="status" aria-label="Starting camera">
-                          <span className="visually-hidden">Loading…</span>
-                        </div>
-                        <div className="scanner-empty-title">Starting camera…</div>
-                      </>
-                    ) : (
-                      <>
-                        <button type="button" className="scanner-cta" onClick={startCamera} aria-label="Enable camera scanning">
-                          {cameraSupported ? <Camera size={26} aria-hidden="true" /> : <CameraOff size={26} aria-hidden="true" />}
-                        </button>
-                        <div className="scanner-empty-title">
-                          {cameraSupported ? 'Start camera scanning' : 'Camera scanning not supported here'}
-                        </div>
-                        <div className={`scanner-empty-sub${cameraSupported ? '' : ' amber'}`}>
-                          {cameraSupported
-                            ? 'Tap to enable the camera, then hold your phone steady over the barcode on the security gate terminal.'
-                            : 'Use the manual entry below to type the gate barcode instead.'}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Manual entry */}
-              <div className="manual-entry mt-3">
-                <label className="manual-label" htmlFor="admin-manual-barcode">
-                  <KeyRound size={15} color="#2DB54A" aria-hidden="true" /> Can't scan? Enter the gate barcode
-                </label>
-                <form className="manual-row" onSubmit={handleManualSubmit}>
-                  <input
-                    id="admin-manual-barcode"
-                    type="text"
-                    className="manual-input"
-                    placeholder="GATE-…"
-                    autoComplete="off"
-                    spellCheck="false"
-                    value={manualValue}
-                    onChange={(e) => setManualValue(e.target.value)}
+      <div className="eh-grid">
+        {/* ---- Status / result (mobile: first) ---- */}
+        <section className="eh-greeting" aria-label="Attendance status">
+          {scanResult ? (
+            <div className="rise-in">
+              <ResultCard result={scanResult} />
+            </div>
+          ) : (
+            <div className="panel status-card" aria-live="polite">
+              <div className="status-top">
+                <span className="status-avatar">
+                  <img
+                    src={`https://ui-avatars.com/api/?name=${encodeURIComponent(employeeName)}&background=2DB54A&color=fff&bold=true&size=64`}
+                    alt=""
+                    style={{ width: 46, height: 46, borderRadius: 12, objectFit: 'cover' }}
                   />
-                  <button type="submit" className="manual-btn" disabled={!manualValue.trim() || scanning}>
-                    {scanning ? 'Recording…' : 'Submit'}
-                  </button>
-                </form>
-                <p className="manual-hint">
-                  The barcode is shown on the security terminal screen (e.g. <strong>GATE-SECURITY</strong>).
-                </p>
+                </span>
+                <div>
+                  <div className="status-greet">
+                    <strong>{greetingByHour()}, {firstName}.</strong>
+                  </div>
+                  {!statsLoading && (
+                    <div style={{ fontSize: 12.5, color: '#6B8070' }}>{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                  )}
+                </div>
               </div>
+
+              {statsLoading ? (
+                <div className="loading-block" style={{ justifyContent: 'flex-start', padding: '18px 0 8px' }}>
+                  <div className="spinner-border spinner-border-sm" style={{ color: '#2DB54A' }} role="status" aria-label="Loading status" />
+                </div>
+              ) : statusKind === 'in' ? (
+                <div className="status-line green">
+                  <span className="status-dot green" aria-hidden="true" />
+                  <span>You're clocked in <Activity size={15} aria-hidden="true" style={{ verticalAlign: -2 }} /></span>
+                </div>
+              ) : statusKind === 'out' ? (
+                <div className="status-line neutral">
+                  <span className="status-dot gray" aria-hidden="true" />
+                  <span>You're clocked out</span>
+                </div>
+              ) : (
+                <div className="status-line amber">
+                  <span className="status-dot amber" aria-hidden="true" />
+                  <span>You haven't clocked in today</span>
+                </div>
+              )}
+
+              {!statsLoading && statusKind === 'in' && (
+                <>
+                  <div className="status-meta">
+                    <Calendar size={14} aria-hidden="true" /> Started at <strong style={{ color: '#1E3027' }}>{fmtTime(today.checked_in)}</strong>
+                  </div>
+                  <div className="status-meta">
+                    <Clock size={14} aria-hidden="true" /> {timeAgo(today.checked_in)}
+                  </div>
+                  <div className="status-meta" style={{ marginTop: 8, color: '#3D5245' }}>
+                    Scan the barcode again when you leave to clock out.
+                  </div>
+                </>
+              )}
+
+              {!statsLoading && statusKind === 'out' && (
+                <>
+                  <div className="status-meta">
+                    <Clock size={14} aria-hidden="true" /> Today's hours: <strong style={{ color: '#1E3027' }}>{fmtHM(today.worked_minutes)}</strong>
+                  </div>
+                  {Number(stats.month_worked_minutes) > 0 && (
+                    <div className="status-meta">
+                      <Award size={14} aria-hidden="true" /> This month: <strong style={{ color: '#1E3027' }}>{fmtHM(stats.month_worked_minutes)}</strong>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!statsLoading && statusKind === 'idle' && (
+                <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
+                  Ready when you are — scan the gate barcode to clock in.
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* ---- Scanner (desktop: first) ---- */}
+        <section className="eh-scanner" aria-label="Barcode scanner">
+          <div className="panel panel-pad">
+            <div className="d-flex justify-content-between align-items-center" style={{ marginBottom: 14 }}>
+              <span className="panel-title">
+                <ScanLine size={17} color="#2DB54A" aria-hidden="true" /> Camera Scanner
+              </span>
+              {cameraOn && (
+                <button type="button" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" onClick={stopCamera} style={{ minHeight: 38 }}>
+                  <CameraOff size={14} aria-hidden="true" /> Stop Camera
+                </button>
+              )}
+            </div>
+
+            <div className="scanner-viewport">
+              <video ref={videoRef} playsInline muted className="scanner-video" aria-label="Live camera preview" />
+              {cameraOn ? (
+                <>
+                  <div className="scanner-shade" aria-hidden="true" />
+                  <span className="scanner-corner tl" aria-hidden="true" />
+                  <span className="scanner-corner tr" aria-hidden="true" />
+                  <span className="scanner-corner bl" aria-hidden="true" />
+                  <span className="scanner-corner br" aria-hidden="true" />
+                  <div className="scanner-target-hint" aria-hidden="true">
+                    <span className="hint-label">Align barcode within the frame</span>
+                  </div>
+                  <span className="scanner-chip">
+                    <span className="live-dot" aria-hidden="true" />
+                    {scanning ? 'Recording…' : 'Camera live'}
+                  </span>
+                </>
+              ) : (
+                <div className="scanner-empty">
+                  {cameraStarting ? (
+                    <>
+                      <div className="spinner-border" style={{ color: '#2DB54A' }} role="status" aria-label="Starting camera">
+                        <span className="visually-hidden">Loading…</span>
+                      </div>
+                      <div className="scanner-empty-title">Starting camera…</div>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" className="scanner-cta" onClick={startCamera} aria-label="Enable camera scanning">
+                        {cameraSupported ? <Camera size={26} aria-hidden="true" /> : <CameraOff size={26} aria-hidden="true" />}
+                      </button>
+                      <div className="scanner-empty-title">
+                        {cameraSupported ? 'Start camera scanning' : 'Camera scanning not supported here'}
+                      </div>
+                      <div className={`scanner-empty-sub${cameraSupported ? '' : ' amber'}`}>
+                        {cameraSupported
+                          ? 'Tap to enable the camera, then hold your phone steady over the barcode on the security gate terminal.'
+                          : 'Use the manual entry below to type the gate barcode instead.'}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div className={`eh-error ${classifyError(error)}`} role="alert" aria-live="polite" style={{ marginTop: 14 }}>
+                {classifyError(error) === 'warn' ? <Lock size={16} aria-hidden="true" /> : <AlertCircle size={16} aria-hidden="true" />}
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Manual entry */}
+            <div className="manual-entry">
+              <label className="manual-label" htmlFor="admin-manual-barcode">
+                <KeyRound size={15} color="#2DB54A" aria-hidden="true" /> Can't scan? Enter the gate barcode
+              </label>
+              <form className="manual-row" onSubmit={handleManualSubmit}>
+                <input
+                  id="admin-manual-barcode"
+                  type="text"
+                  className="manual-input"
+                  placeholder="GATE-…"
+                  autoComplete="off"
+                  spellCheck="false"
+                  value={manualValue}
+                  onChange={(e) => setManualValue(e.target.value)}
+                />
+                <button type="submit" className="manual-btn" disabled={!manualValue.trim() || scanning}>
+                  {scanning ? 'Recording…' : 'Submit'}
+                </button>
+              </form>
+              <p className="manual-hint">
+                The barcode is shown on the security terminal screen (e.g. <strong>GATE-SECURITY</strong>).
+              </p>
             </div>
           </div>
+        </section>
 
-          {/* Status + History */}
-          <div className="col-12 col-lg-5 d-flex flex-column" style={{ gap: 16 }}>
-            <div className="card" style={{ padding: '20px' }}>
-              <div aria-live="polite">
-                <div className="d-flex align-items-center gap-3 mb-3">
-                  <span className="status-avatar">
-                    <HeartPulse size={22} />
-                  </span>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: '#3D5245', lineHeight: 1.3 }}>
-                      <strong>{greetingByHour()}, {firstName}.</strong>
-                    </div>
-                    {!statsLoading && (
-                      <div style={{ fontSize: 12.5, color: '#6B8070', marginTop: 2 }}>
-                        {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {statsLoading ? (
-                  <div className="d-flex align-items-center gap-2 py-2">
-                    <div className="spinner-border spinner-border-sm" style={{ color: '#2DB54A' }} role="status" aria-label="Loading status" />
-                    <span style={{ fontSize: 13, color: '#6B8070' }}>Loading status…</span>
-                  </div>
-                ) : statusKind === 'in' ? (
-                  <div className="status-line green mb-2">
-                    <span className="status-dot green" aria-hidden="true" />
-                    <span>You're clocked in <Activity size={15} aria-hidden="true" style={{ verticalAlign: -2 }} /></span>
-                  </div>
-                ) : statusKind === 'out' ? (
-                  <div className="status-line neutral mb-2">
-                    <span className="status-dot gray" aria-hidden="true" />
-                    <span>You're clocked out</span>
-                  </div>
-                ) : (
-                  <div className="status-line amber mb-2">
-                    <span className="status-dot amber" aria-hidden="true" />
-                    <span>You haven't clocked in today</span>
-                  </div>
-                )}
-
-                {!statsLoading && statusKind === 'in' && (
-                  <>
-                    <div className="status-meta">
-                      <Calendar size={14} aria-hidden="true" /> Started at <strong style={{ color: '#1E3027' }}>{fmtTime(today.checked_in)}</strong>
-                    </div>
-                    <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
-                      Scan the barcode again when you leave to clock out.
-                    </div>
-                  </>
-                )}
-                {!statsLoading && statusKind === 'out' && (
-                  <>
-                    <div className="status-meta">
-                      <Clock size={14} aria-hidden="true" /> Today's hours: <strong style={{ color: '#1E3027' }}>{fmtHM(today.worked_minutes)}</strong>
-                    </div>
-                    {Number(stats.month_worked_minutes) > 0 && (
-                      <div className="status-meta">
-                        <Award size={14} aria-hidden="true" /> This month: <strong style={{ color: '#1E3027' }}>{fmtHM(stats.month_worked_minutes)}</strong>
-                      </div>
-                    )}
-                  </>
-                )}
-                {!statsLoading && statusKind === 'idle' && (
-                  <div className="status-meta" style={{ marginTop: 6, color: '#3D5245' }}>
-                    Ready when you are — scan the gate barcode to clock in.
-                  </div>
-                )}
+        {/* ---- Help + recent attendance (mobile: last) ---- */}
+        <aside className="eh-help" aria-label="How to clock in">
+          <div className="panel help-card">
+            <span className="panel-title" style={{ fontSize: 15, marginBottom: 14, display: 'flex' }}>
+              <Info size={17} color="#2DB54A" aria-hidden="true" style={{ marginRight: 8 }} /> How to clock in / out
+            </span>
+            <div className="help-steps">
+              <div className="help-step">
+                <span className="help-step-num" aria-hidden="true">1</span>
+                <span className="help-step-text">
+                  <strong>Sign in on your phone</strong> — you're already signed in here.
+                </span>
               </div>
-
-              <div className="help-tip" style={{ marginTop: 16 }}>
-                <UserRound size={15} color="#456255" aria-hidden="true" style={{ minWidth: 15, marginTop: 1 }} />
-                <span>
-                  Your attendance is recorded under your admin profile and appears in the Employees list.
+              <div className="help-step">
+                <span className="help-step-num" aria-hidden="true">2</span>
+                <span className="help-step-text">
+                  <strong>Point your camera</strong> at the barcode shown on the security terminal screen.
+                </span>
+              </div>
+              <div className="help-step">
+                <span className="help-step-num" aria-hidden="true">3</span>
+                <span className="help-step-text">
+                  <strong>When the line turns green</strong>, your clock-in or clock-out has been recorded.
                 </span>
               </div>
             </div>
-
-            {/* History */}
-            <div className="card">
-              <div className="card-header d-flex justify-content-between align-items-center">
-                <span>My Recent Attendance</span>
-                <span style={{ fontSize: '12px', color: '#6B8070', fontWeight: '400' }}>Last 14 days</span>
-              </div>
-              <div className="mc-table-scroll">
-                {historyLoading ? (
-                  <div className="loading-block py-4 d-flex justify-content-center">
-                    <div className="spinner-border spinner-border-sm" style={{ color: '#2DB54A' }} role="status" aria-label="Loading history" />
-                  </div>
-                ) : history.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '32px 16px', color: '#6B8070', fontSize: 13 }}>
-                    <Clock size={20} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.5 }} />
-                    No attendance recorded yet.
-                  </div>
-                ) : (
-                  <table className="table mb-0">
-                    <thead>
-                      <tr>
-                        <th className="mc-th-first">Date</th>
-                        <th>In</th>
-                        <th>Out</th>
-                        <th>Worked</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((r, i) => (
-                        <tr key={i}>
-                          <td className="mc-th-first" style={{ fontWeight: 700, color: '#1E3027' }}>
-                            {new Date(`${r.date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          </td>
-                          <td>{fmtTime(r.check_in)}</td>
-                          <td>{fmtTime(r.check_out)}</td>
-                          <td style={{ fontWeight: 600, color: '#1E3027' }}>{r.check_out ? fmtHM(r.worked_minutes) : '—'}</td>
-                          <td><span className={`chip ${statusChipKind(r.status)}`}>{r.status}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
+            <div className="help-tip">
+              <WifiOff size={15} color="#456255" aria-hidden="true" style={{ minWidth: 15, marginTop: 1 }} />
+              <span>
+                If the camera won't open, tap in the barcode field below the scanner and press <strong>Submit</strong>.
+              </span>
+            </div>
+            <div className="help-tip">
+              <MapPin size={15} color="#456255" aria-hidden="true" style={{ minWidth: 15, marginTop: 1 }} />
+              <span>
+                For security, clock-in/out only works while you are on the company premises. Keep <strong>location (GPS)</strong> on and stay connected to the <strong>office Wi-Fi</strong>.
+              </span>
+            </div>
+            <div className="help-tip">
+              <UserRound size={15} color="#456255" aria-hidden="true" style={{ minWidth: 15, marginTop: 1 }} />
+              <span>
+                Your attendance is recorded under your admin profile and appears in the Employees list.
+              </span>
             </div>
           </div>
-        </div>
+
+          {/* Recent attendance */}
+          <div className="panel" style={{ marginTop: 16 }}>
+            <div className="panel-head d-flex justify-content-between align-items-center">
+              <span className="panel-title">My Recent Attendance</span>
+              <span style={{ fontSize: '12px', color: '#6B8070', fontWeight: '400' }}>Last 14 days</span>
+            </div>
+            <div className="mc-table-scroll">
+              {historyLoading ? (
+                <div className="loading-block py-4 d-flex justify-content-center">
+                  <div className="spinner-border spinner-border-sm" style={{ color: '#2DB54A' }} role="status" aria-label="Loading history" />
+                </div>
+              ) : history.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px 16px', color: '#6B8070', fontSize: 13 }}>
+                  <Clock size={20} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.5 }} />
+                  No attendance recorded yet.
+                </div>
+              ) : (
+                <table className="table mb-0">
+                  <thead>
+                    <tr>
+                      <th className="mc-th-first">Date</th>
+                      <th>In</th>
+                      <th>Out</th>
+                      <th>Worked</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((r, i) => (
+                      <tr key={i}>
+                        <td className="mc-th-first" style={{ fontWeight: 700, color: '#1E3027' }}>
+                          {new Date(`${r.date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </td>
+                        <td>{fmtTime(r.check_in)}</td>
+                        <td>{fmtTime(r.check_out)}</td>
+                        <td style={{ fontWeight: 600, color: '#1E3027' }}>{r.check_out ? fmtHM(r.worked_minutes) : '—'}</td>
+                        <td><span className={`chip ${statusChipKind(r.status)}`}>{r.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
